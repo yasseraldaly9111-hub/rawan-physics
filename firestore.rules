@@ -1,0 +1,70 @@
+rules_version = '2';
+// قواعد حماية قاعدة البيانات لمنصة الأستاذة روان محمد.
+// بريد المالك (المدير الأول) مكتوب هنا وفي firebase-config.js. بقية المستخدمين وصلاحياتهم في مجموعة staff
+// ويديرها المدير من لوحة التحكم.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function ownerEmail() { return 'yasseraldaly9111@gmail.com'; }
+
+    function signedIn() { return request.auth != null; }
+    function myEmail() {
+      return signedIn() && request.auth.token.email is string ? request.auth.token.email.lower() : '';
+    }
+    function staffPath() { return /databases/$(database)/documents/staff/$(myEmail()); }
+    function myRole() {
+      return myEmail() == '' ? '' : (exists(staffPath()) ? get(staffPath()).data.role : '');
+    }
+    function isOwnerAdmin() { return myEmail() != '' && myEmail() == ownerEmail(); }
+    function isAdmin() { return isOwnerAdmin() || myRole() == 'admin'; }
+    // isTeacher: أي مستخدم من الكادر (مدير أو أستاذ)
+    function isTeacher() { return isOwnerAdmin() || myRole() in ['admin', 'teacher']; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    function msgsOpen() {
+      return get(/databases/$(database)/documents/settings/site).data.get('studentMsgs', false) == true;
+    }
+
+    // الكادر: كل مستخدم يقرأ صلاحيته، والمدير يدير الجميع (عدا المالك)
+    match /staff/{email} {
+      allow read: if isAdmin() || (myEmail() != '' && email == myEmail());
+      allow create, update: if isAdmin() && email != ownerEmail()
+        && request.resource.data.keys().hasOnly(['name', 'role', 'email', 'by', 'updated'])
+        && request.resource.data.role in ['admin', 'teacher']
+        && request.resource.data.name is string && request.resource.data.name.size() <= 60
+        && request.resource.data.email == email;
+      allow delete: if isAdmin() && email != ownerEmail();
+    }
+
+    // محتوى عام: يقرؤه الجميع، ويعدّله الكادر فقط
+    match /chapters/{id}      { allow read: if true; allow write: if isTeacher(); }
+    match /settings/{id}      { allow read: if true; allow write: if isTeacher(); }
+    match /participants/{g}   { allow read: if true; allow write: if isTeacher() && g in ['1', '3']; }
+    match /announcements/{id} { allow read: if true; allow write: if isTeacher(); }
+
+    // الملزمة PDF وأي ملفات خاصة: للأستاذة فقط (قراءة وكتابة)
+    match /private_files/{path=**} { allow read, write: if isTeacher(); }
+
+    // المراسلة: لكل طالب محادثة واحدة باسم حسابه، لا يراها غيره إلا الأستاذة
+    match /inbox/{uid} {
+      function validThread() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['name', 'grade', 'updated', 'unread'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 40
+          && d.grade in ['1', '3'] && d.updated is number && d.unread == true;
+      }
+      allow read: if isTeacher() || isOwner(uid);
+      allow create, update: if isTeacher() || (isOwner(uid) && msgsOpen() && validThread());
+      allow delete: if isTeacher();
+
+      match /msgs/{mid} {
+        function validMsg(from) {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['from', 'text', 'ts']) && d.from == from
+            && d.text is string && d.text.size() > 0 && d.text.size() <= 600 && d.ts is number;
+        }
+        allow read: if isTeacher() || isOwner(uid);
+        allow create: if (isTeacher() && validMsg('t')) || (isOwner(uid) && msgsOpen() && validMsg('s'));
+        allow update, delete: if isTeacher();
+      }
+    }
+  }
+}
