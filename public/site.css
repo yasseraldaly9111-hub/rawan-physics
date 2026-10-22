@@ -590,6 +590,32 @@ table.bill tfoot td{font-weight:700;color:#fff;border-bottom:none}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 @media (max-width:760px){.classgrid,.tgrid{grid-template-columns:1fr}.tform .two{grid-template-columns:1fr}.pcard,.acard,.tgrid>.card{padding:16px}}
 .stafflist{overflow-x:auto;margin-top:10px}.stafftab{width:100%;min-width:620px;font-size:14px}.stafftab td,.stafftab th{padding:8px 10px;vertical-align:middle}.stafftab .acts{display:flex;gap:6px;flex-wrap:wrap}.stafftab select{font-size:13px;padding:5px 8px}
+/* ---- lab: play / full screen ---- */
+.exp header .fsbtns{display:flex;gap:6px;align-items:center;margin-inline-start:8px}
+.exp header .play{padding:8px 16px;font-weight:600}
+.ctl label.chk{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14.5px}
+.ctl label.chk input{width:18px;height:18px;accent-color:var(--c1)}
+body.noscroll{overflow:hidden}
+.exp.full{position:fixed;inset:0;z-index:300;margin:0;border-radius:0;border:0;display:flex;flex-direction:column;gap:10px;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) 14px calc(env(safe-area-inset-bottom,0px) + 10px);background:var(--bg);overflow:hidden}
+.exp.full header{flex:none}
+.exp.full header p{display:none}
+.exp.full header .ic{width:38px;height:38px;font-size:17px}
+.exp.full header h2{font-size:19px}
+.exp.full .body,.exp.full.wide .body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(250px,320px) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);gap:12px;align-items:stretch}
+.exp.full .ctl{grid-column:1;grid-row:1;overflow:auto;max-height:100%;padding-inline-end:4px}
+.exp.full .reads{grid-column:1;grid-row:2;align-content:start;overflow:auto}
+.exp.full .stage{grid-column:2;grid-row:1/span 2;display:flex;align-items:center;justify-content:center;min-height:0;height:100%}
+.exp.full .stage>canvas,.exp.full .stage>svg{max-width:100%;max-height:100%;height:auto}
+.exp.full .stage>table,.exp.full .stage>div{max-height:100%;overflow:auto;width:100%}
+@media (max-width:760px){
+  .exp.full{overflow:auto}
+  .exp.full .body,.exp.full.wide .body{display:flex;flex-direction:column;flex:none}
+  .exp.full .stage{order:-1;height:auto;min-height:0}
+  .exp.full .stage>canvas,.exp.full .stage>svg{max-height:62vh}
+  .exp.full .ctl{max-height:none}
+  .exp header .fsbtns{margin-inline-start:0}
+}
 
 #boot{position:fixed;inset:0;z-index:200;display:grid;place-items:center;background:#070b18;color:#cdd5f2;font-family:"Readex Pro",Tahoma,sans-serif;text-align:center;padding:24px}
 #boot .sp{width:46px;height:46px;border-radius:50%;border:4px solid rgba(124,156,255,.25);border-top-color:#7c9cff;margin:0 auto 14px;animation:spin 1s linear infinite}

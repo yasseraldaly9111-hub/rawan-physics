@@ -153,6 +153,9 @@ const H={
     const g=$('#'+id);$$('button',g).forEach(b=>b.onclick=()=>{$$('button',g).forEach(x=>x.setAttribute('aria-pressed',x===b));on(b.dataset.v)});
     return g;
   },
+  // Arabic label with numbers on a canvas: right-to-left, numbers kept in reading order
+  rtl(ctx,t,x,y){const d=ctx.direction;ctx.direction='rtl';ctx.fillText(String(t).replace(/(-?\d[\d.,]*)/g,'\u200e$1'),x,y);ctx.direction=d;},
+  check(ctl,id,label,val,on){ctl.insertAdjacentHTML('beforeend',`<label class="chk"><input type="checkbox" id="${id}"${val?' checked':''}> <span>${label}</span></label>`);const i=$('#'+id);i.onchange=()=>on(i.checked);return i;},
   button(ctl,id,text,on){ctl.insertAdjacentHTML('beforeend',`<button type="button" class="btn" id="${id}">${text}</button>`);const b=$('#'+id);b.onclick=()=>on(b);return b;},
   note(ctl,html){ctl.insertAdjacentHTML('beforeend',`<p class="note">${html}</p>`)},
   reads(X){let d=$('.reads',X.el);if(!d){d=document.createElement('div');d.className='reads';X.stage.after(d);}return d;},
@@ -160,9 +163,9 @@ const H={
   sci(x,d=2){if(!isFinite(x))return '∞';if(x===0)return'0';const e=Math.floor(Math.log10(Math.abs(x)));if(e>=-2&&e<4)return(+x.toFixed(d)).toString();const m=x/10**e;return `${+m.toFixed(d)}×10<sup>${e}</sup>`},
   canvas(X,W,Hh,hint){
     X.stage.classList.add('light');
-    const c=document.createElement('canvas');const dpr=Math.min(2,window.devicePixelRatio||1);
+    const c=document.createElement('canvas');const dpr=Math.min(3,Math.max(2,window.devicePixelRatio||1));
     c.width=W*dpr;c.height=Hh*dpr;c.style.aspectRatio=W+'/'+Hh;X.stage.append(c);
-    const ctx=c.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);
+    const ctx=c.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.direction='ltr';
     if(hint)X.stage.insertAdjacentHTML('beforeend',`<span class="hint">${hint}</span>`);
     const pt=e=>{const r=c.getBoundingClientRect();return {x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*Hh/r.height}};
     return {c,ctx,W,H:Hh,pt};
@@ -203,31 +206,68 @@ function build(){
   DEFS.forEach(o=>{
     const el=document.createElement('article');el.className='card exp'+(o.wide?' wide':'');el.id='x-'+o.id;el.dataset.grade=o.grade;
     el.setAttribute('style',`--c1:${o.c1};--c2:${o.c2}`);
-    el.innerHTML=`<header><span class="ic">${o.icon}</span><div><h2>${o.title}</h2><p>${o.ch} • ${o.desc}</p></div><div class="badges">${(o.tags||[]).map(t=>`<span class="tag" style="--gc:${o.c1}">${t}</span>`).join('')}</div></header>
+    el.innerHTML=`<header><span class="ic">${o.icon}</span><div><h2>${o.title}</h2><p>${o.ch} • ${o.desc}</p></div><div class="badges">${(o.tags||[]).map(t=>`<span class="tag" style="--gc:${o.c1}">${t}</span>`).join('')}</div>
+      <div class="fsbtns"><button type="button" class="btn pri play" data-full>▶ تشغيل</button><button type="button" class="btn sm" data-fs hidden title="ملء الشاشة">⛶</button><button type="button" class="btn sm" data-min hidden>✕ تصغير</button></div></header>
       <div class="body"><div class="ctl"></div><div class="stage"></div></div>`;
     grid.append(el);
   });
   const io=new IntersectionObserver(es=>es.forEach(en=>{
     const o=DEFS.find(d=>'x-'+d.id===en.target.id);if(!o)return;
-    let inst=insts.get(o.id);
-    if(en.isIntersecting&&labOn){
-      if(!inst){const X={el:en.target,ctl:$('.ctl',en.target),stage:$('.stage',en.target)};try{inst=o.init(X,H)||{};}catch(err){console.error(err);X.stage.innerHTML='<p class="sim-fallback">تعذّر تشغيل هذه التجربة على هذا الجهاز.</p>';inst={};}insts.set(o.id,inst);}
-      inst.start&&inst.start();inst._vis=true;
-    }else if(inst){inst.stop&&inst.stop();inst._vis=false;}
+    if(en.isIntersecting&&labOn){const inst=ensure(o,en.target);inst._vis=true;if(!full||full===en.target)inst.start&&inst.start();}
+    else{const inst=insts.get(o.id);if(inst){inst.stop&&inst.stop();inst._vis=false;}}
   }),{rootMargin:'120px'});
-  $$('.exp',grid).forEach(e=>io.observe(e));
+  $$('.exp',grid).forEach(e=>{io.observe(e);
+    const o=DEFS.find(d=>'x-'+d.id===e.id);
+    $('[data-full]',e).onclick=()=>enterFull(o,e);
+    $('[data-min]',e).onclick=()=>exitFull();
+    $('[data-fs]',e).onclick=()=>{if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});else if(e.requestFullscreen)e.requestFullscreen().catch(()=>{});};
+  });
+  new ResizeObserver(()=>{if(full)fit(full);}).observe(document.documentElement);
 }
+function ensure(o,el){
+  let inst=insts.get(o.id);
+  if(!inst){const X={el,ctl:$('.ctl',el),stage:$('.stage',el)};try{inst=o.init(X,H)||{};}catch(err){console.error(err);X.stage.innerHTML='<p class="sim-fallback">تعذّر تشغيل هذه التجربة على هذا الجهاز.</p>';inst={};}insts.set(o.id,inst);}
+  return inst;
+}
+/* ---------- full screen ("play") ---------- */
+let full=null;
+function fit(el){
+  const st=$('.stage',el),m=st&&st.querySelector(':scope>canvas,:scope>svg');if(!m)return;
+  if(!el.classList.contains('full')||innerWidth<=760){m.style.width='';return;}
+  let ar=1;if(m.tagName.toLowerCase()==='svg'){const vb=m.viewBox&&m.viewBox.baseVal;ar=vb&&vb.height?vb.width/vb.height:1.6;}else ar=m.width/m.height||1.6;
+  const pad=parseFloat(getComputedStyle(st).paddingLeft)*2||0;
+  m.style.width=Math.max(160,Math.min(st.clientWidth-pad,(st.clientHeight-pad)*ar))+'px';
+}
+function enterFull(o,el){
+  if(full)exitFull(true);
+  full=el;el.classList.add('full');document.body.classList.add('noscroll');
+  $('[data-full]',el).hidden=true;$('[data-min]',el).hidden=false;$('[data-fs]',el).hidden=!el.requestFullscreen;
+  insts.forEach((i,id)=>{if('x-'+id!==el.id&&i.stop)i.stop();});
+  const inst=ensure(o,el);inst.start&&inst.start();
+  requestAnimationFrame(()=>{fit(el);window.dispatchEvent(new Event('resize'));});
+  $('[data-min]',el).focus();
+}
+function exitFull(keep){
+  const el=full;if(!el)return;full=null;
+  if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
+  el.classList.remove('full');document.body.classList.remove('noscroll');
+  $('[data-full]',el).hidden=false;$('[data-min]',el).hidden=true;$('[data-fs]',el).hidden=true;fit(el);
+  if(!keep){insts.forEach(i=>{if(i._vis&&i.start)i.start();else if(!i._vis&&i.stop)i.stop();});el.scrollIntoView({block:'center'});$('[data-full]',el).focus();}
+  window.dispatchEvent(new Event('resize'));
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&full&&!document.fullscreenElement)exitFull();});
 const counts={'1':DEFS.filter(d=>d.grade==='1').length,'3':DEFS.filter(d=>d.grade==='3').length};
 window.LAB_COUNT=counts;
 $('#statLab').textContent=ar(DEFS.length);
-$('#g3LabTag').textContent=ar(counts['3'])+' تجارب';$('#g1LabTag').textContent=ar(counts['1'])+' تجارب';
+const nExp=n=>ar(n)+(n>=3&&n<=10?' تجارب':' تجربة');
+$('#g3LabTag').textContent=nExp(counts['3']);$('#g1LabTag').textContent=nExp(counts['1']);
 const lf=$('#labFilter');
 lf.innerHTML=[['3','الثالث المتوسط'],['1','الأول المتوسط'],['all','كل التجارب']].map(([v,t])=>`<button type="button" class="chip" data-g="${v}" aria-pressed="false">${t} (${ar(v==='all'?DEFS.length:counts[v])})</button>`).join('');
 function filter(g){cur=g;$$('.chip',lf).forEach(b=>b.setAttribute('aria-pressed',b.dataset.g===g));$$('.exp',grid).forEach(e=>e.hidden=!(g==='all'||e.dataset.grade===g));}
 $$('.chip',lf).forEach(b=>b.onclick=()=>filter(b.dataset.g));
 window.LAB={
   show(g){build();filter(g);},
-  visible(v){labOn=v;insts.forEach(i=>{if(!v&&i.stop)i.stop();else if(v&&i._vis&&i.start)i.start();});if(v)setTimeout(()=>window.dispatchEvent(new Event('scroll')),50);}
+  visible(v){if(!v&&full)exitFull(true);labOn=v;insts.forEach(i=>{if(!v&&i.stop)i.stop();else if(v&&i._vis&&i.start)i.start();});if(v)setTimeout(()=>window.dispatchEvent(new Event('scroll')),50);}
 };
 };
 })();
@@ -748,11 +788,444 @@ init(X,H){
     ctx.strokeStyle='#2a3149';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(gx,gy);ctx.lineTo(gx,gy+gh);ctx.lineTo(gx+gw,gy+gh);ctx.stroke();
     ctx.strokeStyle='#d5dbe8';ctx.lineWidth=1;for(let k=1;k<=5;k++){ctx.beginPath();ctx.moveTo(gx,gy+gh-k*gh/5);ctx.lineTo(gx+gw,gy+gh-k*gh/5);ctx.stroke();}
     ctx.fillStyle='#2a3149';ctx.font='600 12px Readex Pro';ctx.textAlign='center';for(let k=0;k<=10;k+=2)ctx.fillText(k+' s',gx+k*gw/10,gy+gh+18);ctx.textAlign='right';for(let k=0;k<=5;k++)ctx.fillText(Math.round(maxY*k/5),gx-6,gy+gh-k*gh/5+4);
-    ctx.save();ctx.translate(18,gy+gh/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillText('المسافة (m)',0,0);ctx.restore();ctx.textAlign='center';ctx.fillText('الزمن (s)',gx+gw/2,gy+gh+36);
+    ctx.save();ctx.translate(18,gy+gh/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';H.rtl(ctx,'المسافة (m)',0,0);ctx.restore();ctx.textAlign='center';H.rtl(ctx,'الزمن (s)',gx+gw/2,gy+gh+36);
     ctx.strokeStyle='#ff4d7d';ctx.lineWidth=3;ctx.beginPath();data.forEach(([tt,xx],i)=>{const X2=gx+tt/10*gw,Y2=gy+gh-Math.min(1,xx/maxY)*gh;i?ctx.lineTo(X2,Y2):ctx.moveTo(X2,Y2);});ctx.stroke();
     R.innerHTML=H.rd([['الزمن',t.toFixed(1)+' s'],['المسافة',x.toFixed(1)+' m'],['السرعة الآنية',vel.toFixed(1)+' m/s'],['متوسط السرعة',(t?x/t:0).toFixed(1)+' m/s']]);
   }
   const L=H.loop(dt=>draw(dt));draw(0);return L;
+}});
+
+/* ===================== More PhET-style simulations ===================== */
+
+/* ---------- shared: magnetic field scene (needle grid, compass, field meter) ---------- */
+function magScene(X,H,cfg){
+  const {ctx,W,H:Hh,pt,c}=H.canvas(X,960,560,cfg.hint);
+  X.stage.classList.remove('light');X.stage.classList.add('dark');
+  const S={grid:true,earth:false,compass:{x:cfg.cx||760,y:cfg.cy||420,th:0,w:0,on:true},probe:{x:200,y:450,on:false}};
+  const SOFT=60,EARTH=0.06,REF=3,GS=22;
+  function raw(x,y){let bx=0,by=0;for(const p of cfg.poles()){const dx=x-p.x,dy=y-p.y,d2=dx*dx+dy*dy+SOFT,f=p.q/(d2*Math.sqrt(d2));bx+=dx*f;by+=dy*f;}return [bx,by];}
+  function field(x,y){
+    let b=raw(x,y);const ins=cfg.inside&&cfg.inside(x,y);
+    if(ins){const m=Math.hypot(...raw(ins.cx,ins.cy));b=[ins.ux*m,ins.uy*m];}
+    if(S.earth)b=[b[0],b[1]-EARTH];
+    return b;
+  }
+  function needle(x,y,ux,uy,l,w,a,sCol){
+    ctx.globalAlpha=a;
+    ctx.fillStyle='#e8263a';ctx.beginPath();ctx.moveTo(x+ux*l,y+uy*l);ctx.lineTo(x-uy*w,y+ux*w);ctx.lineTo(x+uy*w,y-ux*w);ctx.closePath();ctx.fill();
+    ctx.fillStyle=sCol;ctx.beginPath();ctx.moveTo(x-ux*l,y-uy*l);ctx.lineTo(x-uy*w,y+ux*w);ctx.lineTo(x+uy*w,y-ux*w);ctx.closePath();ctx.fill();
+    ctx.globalAlpha=1;
+  }
+  function drawGrid(){
+    const sp=40;
+    for(let y=sp/2;y<Hh;y+=sp)for(let x=sp/2;x<W;x+=sp){
+      if(cfg.skip&&cfg.skip(x,y))continue;
+      const [bx,by]=field(x,y),m=Math.hypot(bx,by);if(m<1e-6)continue;
+      needle(x,y,bx/m,by/m,sp*.36,sp*.085,Math.min(1,Math.pow(m/REF,.5)),'#d6dbe6');
+    }
+  }
+  function drawCompass(){
+    const C=S.compass;if(!C.on)return;
+    ctx.save();ctx.translate(C.x,C.y);
+    ctx.fillStyle='rgba(0,0,0,.35)';ctx.beginPath();ctx.arc(3,4,46,0,7);ctx.fill();
+    const g=ctx.createRadialGradient(-12,-14,6,0,0,46);g.addColorStop(0,'#f4f6fb');g.addColorStop(1,'#9aa2b4');
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,46,0,7);ctx.fill();
+    ctx.fillStyle='#1a1f2e';ctx.beginPath();ctx.arc(0,0,36,0,7);ctx.fill();
+    ctx.fillStyle='#1a1f2e';for(let k=0;k<8;k++){const a=k*Math.PI/4;ctx.beginPath();ctx.arc(Math.cos(a)*41,Math.sin(a)*41,3.2,0,7);ctx.fill();}
+    ctx.rotate(C.th);
+    ctx.fillStyle='#e8263a';ctx.beginPath();ctx.moveTo(32,0);ctx.lineTo(0,-7);ctx.lineTo(0,7);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#f2f4f8';ctx.beginPath();ctx.moveTo(-32,0);ctx.lineTo(0,-7);ctx.lineTo(0,7);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#1a1f2e';ctx.beginPath();ctx.arc(0,0,3,0,7);ctx.fill();
+    ctx.restore();
+  }
+  function drawProbe(){
+    const P=S.probe;if(!P.on)return;
+    const [bx,by]=field(P.x,P.y),m=Math.hypot(bx,by);
+    ctx.save();ctx.translate(P.x,P.y);
+    ctx.strokeStyle='#3f7bff';ctx.lineWidth=3;ctx.fillStyle='rgba(63,123,255,.15)';ctx.beginPath();ctx.arc(0,0,16,0,7);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-10,0);ctx.lineTo(10,0);ctx.moveTo(0,-10);ctx.lineTo(0,10);ctx.stroke();
+    ctx.fillStyle='#3f7bff';ctx.fillRect(-4,16,8,26);
+    const bxW=150,bxH=96,ox=P.x>W-190?-bxW-26:26,oy=P.y<110?20:-bxH-10;
+    ctx.fillStyle='rgba(222,232,255,.96)';ctx.strokeStyle='#3f7bff';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(ox,oy,bxW,bxH,10);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#14204a';ctx.font='600 14px Readex Pro';ctx.textAlign='left';
+    const th=Math.atan2(-by,bx)*180/Math.PI;
+    [['B',(m*GS).toFixed(1)+' G'],['Bx',(bx*GS).toFixed(1)+' G'],['By',(-by*GS).toFixed(1)+' G'],['θ',th.toFixed(0)+'°']].forEach(([k,v],i)=>{ctx.fillText(k,ox+12,oy+24+i*21);ctx.textAlign='right';ctx.fillText(v,ox+bxW-12,oy+24+i*21);ctx.textAlign='left';});
+    ctx.restore();
+    return m;
+  }
+  // dragging: compass > probe > scene objects
+  let drag=null;
+  c.addEventListener('pointerdown',e=>{
+    const p=pt(e),C=S.compass,P=S.probe;
+    if(C.on&&Math.hypot(p.x-C.x,p.y-C.y)<48)drag={o:C,dx:p.x-C.x,dy:p.y-C.y};
+    else if(P.on&&Math.hypot(p.x-P.x,p.y-P.y)<30)drag={o:P,dx:p.x-P.x,dy:p.y-P.y};
+    else{const o=cfg.hit&&cfg.hit(p);if(o)drag={o,dx:p.x-o.x,dy:p.y-o.y};}
+    if(drag){c.setPointerCapture(e.pointerId);e.preventDefault();}
+  });
+  c.addEventListener('pointermove',e=>{if(!drag)return;const p=pt(e);drag.o.x=Math.max(20,Math.min(W-20,p.x-drag.dx));drag.o.y=Math.max(20,Math.min(Hh-20,p.y-drag.dy));});
+  const up=()=>{drag=null};c.addEventListener('pointerup',up);c.addEventListener('pointercancel',up);
+  function step(dt){
+    const C=S.compass;if(!C.on)return;
+    const [bx,by]=field(C.x,C.y),m=Math.hypot(bx,by);if(m<1e-6)return;
+    const phi=Math.atan2(by,bx);let d=C.th-phi;d=Math.atan2(Math.sin(d),Math.cos(d));
+    C.w+=(-90*Math.sin(d)*Math.min(1,m/.4))*dt;C.w*=Math.pow(.04,dt);C.th+=C.w*dt;
+  }
+  function frame(dt){
+    step(dt);
+    ctx.fillStyle='#000';ctx.fillRect(0,0,W,Hh);
+    if(S.earth){ctx.fillStyle='rgba(120,200,255,.55)';ctx.font='600 14px Readex Pro';ctx.textAlign='center';H.rtl(ctx,'↑ الشمال الجغرافي (مجال الأرض)',W/2,22);}
+    if(S.grid)drawGrid();
+    cfg.draw(ctx,dt);
+    drawCompass();
+    return drawProbe();
+  }
+  return {S,ctx,W,Hh,field,frame,needle};
+}
+
+/* ---------- 1. Bar magnet (PhET style) ---------- */
+labDef({id:'barmagnet',grade:'3',icon:'⫴',title:'المغناطيس القضيبي ومجاله',ch:'الفصل الثاني',desc:'مثل محاكي PhET: شبكة بوصلات، قوة المغناطيس، رؤية الداخل، مقياس المجال',c1:'#e8263a',c2:'#5a7dff',tags:['محاكاة','PhET'],
+init(X,H){
+  const M={x:420,y:250,w:250,h:62,flip:false,str:.75,inside:false};
+  const L=()=>M.w*.42;
+  const sc=magScene(X,H,{hint:'اسحب المغناطيس أو البوصلة أو مقياس المجال',
+    poles:()=>{const s=M.flip?-1:1,q=M.str*42000;return [{x:M.x+s*L(),y:M.y,q},{x:M.x-s*L(),y:M.y,q:-q}];},
+    inside:(x,y)=>Math.abs(x-M.x)<M.w/2&&Math.abs(y-M.y)<M.h/2?{cx:M.x,cy:M.y,ux:M.flip?-1:1,uy:0}:null,
+    skip:(x,y)=>Math.abs(x-M.x)<M.w/2+6&&Math.abs(y-M.y)<M.h/2+6,
+    hit:p=>Math.abs(p.x-M.x)<M.w/2&&Math.abs(p.y-M.y)<M.h/2?M:null,
+    draw(ctx){
+      const x0=M.x-M.w/2,y0=M.y-M.h/2,half=M.w/2;
+      const red=['#ff5a5f','#d9202c','#a3121c'],blue=['#6f8dff','#3550c8','#22358f'];
+      const left=M.flip?red:blue,right=M.flip?blue:red;
+      [[x0,left],[M.x,right]].forEach(([x,cl])=>{const g=ctx.createLinearGradient(0,y0,0,y0+M.h);g.addColorStop(0,cl[0]);g.addColorStop(.45,cl[1]);g.addColorStop(1,cl[2]);ctx.fillStyle=g;ctx.fillRect(x,y0,half,M.h);});
+      ctx.strokeStyle='rgba(255,255,255,.35)';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(x0,y0,M.w,M.h,8);ctx.stroke();
+      if(M.inside){for(let i=0;i<5;i++)for(let j=0;j<2;j++){const x=x0+M.w*(i+.5)/5,y=y0+M.h*(j+.5)/2;sc.needle(x,y,M.flip?-1:1,0,15,4,1,'#e9edf5');}}
+      else{ctx.fillStyle='#fff';ctx.font='800 34px Readex Pro';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(M.flip?'N':'S',x0+34,M.y+2);ctx.fillText(M.flip?'S':'N',x0+M.w-34,M.y+2);ctx.textBaseline='alphabetic';}
+    }});
+  const ctl=X.ctl;
+  H.slider(ctl,{id:'bmS',label:'قوة المغناطيس',min:0,max:100,value:75,unit:'%',on:v=>{M.str=v/100}}).init();
+  H.check(ctl,'bmF','المجال المغناطيسي (B)',true,v=>sc.S.grid=v);
+  H.check(ctl,'bmI','رؤية داخل المغناطيس',false,v=>M.inside=v);
+  H.check(ctl,'bmE','مجال الأرض',false,v=>sc.S.earth=v);
+  H.check(ctl,'bmC','البوصلة',true,v=>sc.S.compass.on=v);
+  H.check(ctl,'bmP','مقياس المجال',false,v=>sc.S.probe.on=v);
+  H.button(ctl,'bmFlip','اقلب الأقطاب ⇄',()=>{M.flip=!M.flip;});
+  H.button(ctl,'bmR','إعادة الوضع ↺',()=>{Object.assign(M,{x:420,y:250,flip:false});Object.assign(sc.S.compass,{x:760,y:420,w:0});Object.assign(sc.S.probe,{x:200,y:450});});
+  H.note(ctl,'<b>لاحظ:</b> خطوط المجال تخرج من القطب الشمالي N وتدخل في الجنوبي S، وداخل المغناطيس يكون اتجاهها من S إلى N. كلما ابتعدت قلّت شدة المجال (البوصلات أبهت).');
+  const R=H.reads(X);let tAcc=0;
+  const Lp=H.loop(dt=>{const m=sc.frame(dt);tAcc+=dt;if(tAcc>.2){tAcc=0;const [bx,by]=sc.field(sc.S.compass.x,sc.S.compass.y);
+    R.innerHTML=H.rd([['قوة المغناطيس',Math.round(M.str*100)+'%'],['المجال عند البوصلة',(Math.hypot(bx,by)*22).toFixed(1)+' G'],['القطب الشمالي',M.flip?'يسار':'يمين',1]]);}});
+  sc.frame(0);return Lp;
+}});
+
+/* ---------- 2. Electromagnet ---------- */
+labDef({id:'electromagnet',grade:'3',icon:'⌁',title:'المغناطيس الكهربائي',ch:'الفصل السادس',desc:'ملف وبطارية: غيّر الفولطية وعدد اللفات ونوع التيار ولاحظ المجال',c1:'#ff9f1c',c2:'#ffd166',tags:['محاكاة','PhET'],wide:false,
+init(X,H){
+  const E={x:430,y:250,len:190,r:52,n:3,V:6,ac:false,f:.5,t:0,phase:0,elec:true};
+  const I=()=>E.ac?E.V*Math.sin(2*Math.PI*E.f*E.t):E.V;
+  const sc=magScene(X,H,{hint:'اسحب الملف أو البوصلة أو مقياس المجال',cx:780,cy:250,
+    poles:()=>{const q=I()*E.n*1600;return [{x:E.x+E.len/2,y:E.y,q},{x:E.x-E.len/2,y:E.y,q:-q}];},
+    inside:(x,y)=>Math.abs(x-E.x)<E.len/2&&Math.abs(y-E.y)<E.r?{cx:E.x,cy:E.y,ux:Math.sign(I())||1,uy:0}:null,
+    skip:(x,y)=>Math.abs(x-E.x)<E.len/2+14&&Math.abs(y-E.y)<E.r+14||(y>E.y+E.r&&y<E.y+E.r+160&&Math.abs(x-E.x)<E.len/2+40),
+    hit:p=>Math.abs(p.x-E.x)<E.len/2+10&&Math.abs(p.y-E.y)<E.r+150&&p.y<E.y+E.r+150?E:null,
+    draw(ctx,dt){
+      const i=I(),x0=E.x-E.len/2,x1=E.x+E.len/2,top=E.y-E.r,bot=E.y+E.r,by=E.y+E.r+110;
+      E.phase+=dt*i*0.35;
+      // wires to source
+      ctx.strokeStyle='#c98a3a';ctx.lineWidth=5;ctx.lineJoin='round';
+      ctx.beginPath();ctx.moveTo(x0,bot);ctx.lineTo(x0-20,by);ctx.lineTo(E.x-60,by);ctx.moveTo(E.x+60,by);ctx.lineTo(x1+20,by);ctx.lineTo(x1,bot);ctx.stroke();
+      // source
+      if(E.ac){ctx.fillStyle='#f2f4f8';ctx.strokeStyle='#ffd166';ctx.lineWidth=4;ctx.beginPath();ctx.arc(E.x,by,40,0,7);ctx.fill();ctx.stroke();
+        ctx.strokeStyle='#1a1f2e';ctx.lineWidth=3;ctx.beginPath();for(let k=-28;k<=28;k++){const yy=by-16*Math.sin(k/28*Math.PI);k===-28?ctx.moveTo(E.x+k,yy):ctx.lineTo(E.x+k,yy);}ctx.stroke();}
+      else{const s=Math.sign(E.V)||1,g=ctx.createLinearGradient(0,by-22,0,by+22);g.addColorStop(0,'#5b6478');g.addColorStop(.5,'#2b3142');g.addColorStop(1,'#151925');
+        ctx.fillStyle=g;ctx.fillRect(E.x-60,by-22,120,44);ctx.fillStyle='#d4a53c';ctx.fillRect(s>0?E.x+28:E.x-60,by-22,32,44);
+        ctx.fillStyle='#fff';ctx.font='700 16px Readex Pro';ctx.textAlign='center';ctx.fillText(Math.abs(E.V).toFixed(1)+' V',E.x-(s>0?10:-14),by+6);
+        ctx.fillStyle='#1a1f2e';ctx.fillText('+',s>0?E.x+44:E.x-44,by+6);}
+      // iron core hint + back halves of loops
+      const loops=E.n*4,dx=E.len/loops;
+      ctx.lineWidth=7;ctx.strokeStyle='#8a5a22';
+      for(let k=0;k<loops;k++){const x=x0+dx*(k+.5);ctx.beginPath();ctx.moveTo(x-dx*.3,top);ctx.lineTo(x+dx*.3,bot);ctx.stroke();}
+      // electrons on back side
+      const drawE=front=>{if(!E.elec)return;ctx.fillStyle=front?'#7fd0ff':'rgba(127,208,255,.45)';
+        for(let k=0;k<loops;k++)for(let j=0;j<2;j++){let u=((j/2+E.phase)%1+1)%1;const x=x0+dx*(k+.5);
+          if(front){const xx=x+dx*.3-u*dx*.6,yy=top+u*(bot-top);ctx.beginPath();ctx.arc(xx,yy,3.4,0,7);ctx.fill();}
+          else{const xx=x-dx*.3+u*dx*.6,yy=bot-u*(bot-top);ctx.beginPath();ctx.arc(xx,yy,3,0,7);ctx.fill();}}};
+      drawE(false);
+      // front halves
+      ctx.strokeStyle='#e7a14c';ctx.lineWidth=8;
+      for(let k=0;k<loops;k++){const x=x0+dx*(k+.5);ctx.beginPath();ctx.moveTo(x+dx*.3,top);ctx.lineTo(x-dx*.3,bot);ctx.stroke();}
+      drawE(true);
+      ctx.fillStyle='rgba(255,255,255,.75)';ctx.font='600 13px Readex Pro';ctx.textAlign='center';H.rtl(ctx,'التيار: '+i.toFixed(1)+' A',E.x,top-14);
+    }});
+  const ctl=X.ctl;
+  H.seg(ctl,'emType','مصدر التيار',[['dc','بطارية (مستمر)'],['ac','متناوب AC']],'dc',v=>{E.ac=v==='ac';E.t=0;});
+  H.slider(ctl,{id:'emV',label:'الفولطية',min:-10,max:10,step:.5,value:6,unit:'V',on:v=>{E.V=v}}).init();
+  H.slider(ctl,{id:'emN',label:'عدد اللفات',min:1,max:4,value:3,on:v=>{E.n=v}}).init();
+  H.slider(ctl,{id:'emF',label:'تردد التيار المتناوب',min:.1,max:2,step:.1,value:.5,unit:'Hz',on:v=>{E.f=v}}).init();
+  H.check(ctl,'emG','المجال المغناطيسي (B)',true,v=>sc.S.grid=v);
+  H.check(ctl,'emEl','إظهار الإلكترونات',true,v=>E.elec=v);
+  H.check(ctl,'emC','البوصلة',true,v=>sc.S.compass.on=v);
+  H.check(ctl,'emP','مقياس المجال',false,v=>sc.S.probe.on=v);
+  H.note(ctl,'<b>لاحظ:</b> يزداد المجال بزيادة التيار وعدد اللفات، وعكس قطبي البطارية يعكس قطبي المغناطيس. مع التيار المتناوب تنقلب الأقطاب باستمرار.');
+  const R=H.reads(X);let acc=0;
+  const L=H.loop(dt=>{E.t+=dt;sc.frame(dt);acc+=dt;if(acc>.15){acc=0;const i=I();
+    R.innerHTML=H.rd([['التيار',i.toFixed(2)+' A'],['عدد اللفات',E.n],['القطب الشمالي',Math.abs(i)<.05?'لا يوجد':i>0?'يمين الملف':'يسار الملف',1]]);}});
+  sc.frame(0);return L;
+}});
+
+/* ---------- 3. Ohm's law ---------- */
+labDef({id:'ohm',grade:'3',icon:'V=IR',title:'قانون أوم',ch:'الفصل الثالث',desc:'غيّر الفولطية والمقاومة ولاحظ كيف يتغير التيار',c1:'#3e8bff',c2:'#9fd0ff',tags:['محاكاة','PhET'],
+init(X,H){
+  const {ctx,W,H:Hh}=H.canvas(X,900,540);
+  let V=4.5,Rr=500,ph=0;
+  const ctl=X.ctl;
+  H.slider(ctl,{id:'ohV',label:'الفولطية V',min:.1,max:9,step:.1,value:4.5,unit:'V',fmt:v=>v.toFixed(1),on:v=>{V=v}}).init();
+  H.slider(ctl,{id:'ohR',label:'المقاومة R',min:10,max:1000,step:10,value:500,unit:'Ω',on:v=>{Rr=v}}).init();
+  H.note(ctl,'<b>قانون أوم:</b> التيار يتناسب طرديًا مع الفولطية وعكسيًا مع المقاومة: I = V ÷ R. لاحظ حجم الحروف في المعادلة.');
+  const R=H.reads(X);
+  function draw(dt){
+    const I=V/Rr*1000;ph+=dt*I*.02;
+    ctx.fillStyle='#f6f8fe';ctx.fillRect(0,0,W,Hh);
+    // equation with scaled letters
+    const sV=40+V/9*120,sI=34+Math.max(0,Math.min(1,Math.log10(Math.max(I,.1)*10)/Math.log10(9000)))*150,sR=40+Rr/1000*120;
+    ctx.textBaseline='alphabetic';ctx.textAlign='center';const base=200;
+    ctx.font=`700 ${sV}px Readex Pro`;ctx.fillStyle='#2f6bff';ctx.fillText('V',170,base);
+    ctx.font='600 70px Readex Pro';ctx.fillStyle='#2a3149';ctx.fillText('=',300,base-20);
+    ctx.font=`700 ${sI}px Readex Pro`;ctx.fillStyle='#e8263a';ctx.fillText('I',450,base);
+    ctx.font=`700 ${sR}px Readex Pro`;ctx.fillStyle='#16a36b';ctx.fillText('R',660,base);
+    // circuit
+    const x0=110,x1=790,y0=280,y1=500;
+    ctx.strokeStyle='#2a3149';ctx.lineWidth=6;ctx.beginPath();ctx.rect(x0,y0,x1-x0,y1-y0);ctx.stroke();
+    // batteries on bottom
+    const nb=Math.max(1,Math.ceil(V/1.5));const bw=60;const bx0=(x0+x1)/2-nb*bw/2;
+    ctx.fillStyle='#f6f8fe';ctx.fillRect(bx0-4,y1-24,nb*bw+8,48);
+    for(let k=0;k<nb;k++){const x=bx0+k*bw;const full=k<nb-1||V%1.5===0?1:(V%1.5)/1.5;
+      ctx.fillStyle='#3a4256';ctx.fillRect(x,y1-20,bw-8,40);ctx.fillStyle='#d4a53c';ctx.fillRect(x+bw-14,y1-20,6,40);
+      ctx.fillStyle='rgba(255,255,255,.25)';ctx.fillRect(x+3,y1-17,(bw-20)*full,6);}
+    ctx.fillStyle='#2a3149';ctx.font='600 15px Readex Pro';ctx.fillText(nb+' × 1.5 V',(x0+x1)/2,y1+44);
+    // resistor on top
+    const rx=330,rw=240;ctx.fillStyle='#e9d8b5';ctx.strokeStyle='#8a6a2f';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(rx,y0-30,rw,60,10);ctx.fill();ctx.stroke();
+    const dots=Math.round(Rr/1000*160)+6;let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
+    ctx.fillStyle='#5b4520';for(let k=0;k<dots;k++){ctx.beginPath();ctx.arc(rx+8+rnd()*(rw-16),y0-22+rnd()*44,2.2,0,7);ctx.fill();}
+    // current arrows (conventional, clockwise)
+    const per=2*((x1-x0)+(y1-y0)),n=14;ctx.fillStyle='#e8263a';
+    for(let k=0;k<n;k++){let s=((k/n+ph)%1)*per;let x,y,a;
+      if(s<x1-x0){x=x0+s;y=y0;a=0;}else if((s-=x1-x0)<y1-y0){x=x1;y=y0+s;a=Math.PI/2;}else if((s-=y1-y0)<x1-x0){x=x1-s;y=y1;a=Math.PI;}else{s-=x1-x0;x=x0;y=y1-s;a=-Math.PI/2;}
+      if(y===y0&&x>rx-6&&x<rx+rw+6)continue;if(y===y1&&x>bx0-8&&x<bx0+nb*bw+8)continue;
+      const sz=4+Math.min(1,I/900)*9;ctx.save();ctx.translate(x,y);ctx.rotate(a);ctx.beginPath();ctx.moveTo(sz,0);ctx.lineTo(-sz,-sz*.8);ctx.lineTo(-sz,sz*.8);ctx.closePath();ctx.fill();ctx.restore();}
+    R.innerHTML=H.rd([['الفولطية V',V.toFixed(1)+' V'],['المقاومة R',Rr+' Ω'],['التيار I = V/R',I.toFixed(1)+' mA']]);
+  }
+  const L=H.loop(draw);draw(0);return L;
+}});
+
+/* ---------- 4. Resistance of a wire ---------- */
+labDef({id:'wireres',grade:'3',icon:'ρL/A',title:'العوامل المؤثرة في المقاومة',ch:'الفصل الثالث',desc:'نوع المادة والطول ومساحة المقطع ودرجة الحرارة',c1:'#16a36b',c2:'#8af0cc',tags:['محاكاة','PhET'],
+init(X,H){
+  const {ctx,W,H:Hh}=H.canvas(X,900,520);
+  let rho=.5,Lw=10,A=7.5,T=20;
+  const ctl=X.ctl;
+  H.slider(ctl,{id:'wrRho',label:'المقاومية ρ (نوع المادة)',min:.01,max:1,step:.01,value:.5,unit:'Ω·cm',fmt:v=>v.toFixed(2),on:v=>{rho=v}}).init();
+  H.slider(ctl,{id:'wrL',label:'طول السلك L',min:.1,max:20,step:.1,value:10,unit:'cm',fmt:v=>v.toFixed(1),on:v=>{Lw=v}}).init();
+  H.slider(ctl,{id:'wrA',label:'مساحة المقطع A',min:.01,max:15,step:.01,value:7.5,unit:'cm²',fmt:v=>v.toFixed(2),on:v=>{A=v}}).init();
+  H.slider(ctl,{id:'wrT',label:'درجة الحرارة',min:0,max:200,value:20,unit:'°C',on:v=>{T=v}}).init();
+  H.note(ctl,'<b>القاعدة:</b> تزداد المقاومة بزيادة الطول وبزيادة المقاومية، وتقل بزيادة مساحة المقطع: R = ρL ÷ A. وفي الموصلات المعدنية تزداد المقاومة بارتفاع درجة الحرارة.');
+  const R=H.reads(X);
+  function draw(){
+    const Rv=rho*Lw/A*(1+.004*(T-20));
+    ctx.fillStyle='#f6f8fe';ctx.fillRect(0,0,W,Hh);ctx.textAlign='center';ctx.textBaseline='alphabetic';
+    const fR=40+Math.min(1,Math.log10(Rv*100+1)/5)*120,fp=30+rho*80,fL=30+Lw/20*80,fA=30+A/15*80;
+    ctx.font=`700 ${fR}px Readex Pro`;ctx.fillStyle='#16a36b';ctx.fillText('R',130,190);
+    ctx.font='600 60px Readex Pro';ctx.fillStyle='#2a3149';ctx.fillText('=',240,175);
+    ctx.font=`700 ${fp}px Readex Pro`;ctx.fillStyle='#8e44ad';ctx.fillText('ρ',360,140);
+    ctx.font=`700 ${fL}px Readex Pro`;ctx.fillStyle='#2f6bff';ctx.fillText('L',470,140);
+    ctx.fillStyle='#2a3149';ctx.fillRect(310,160,220,5);
+    ctx.font=`700 ${fA}px Readex Pro`;ctx.fillStyle='#e8263a';ctx.fillText('A',420,170+fA*.85);
+    ctx.font='600 26px Readex Pro';ctx.fillStyle='#2a3149';ctx.fillText('R = '+(Rv<.1?Rv.toFixed(4):Rv.toFixed(3))+' Ω',720,160);
+    // wire as a cylinder
+    const len=60+Lw/20*620,d=14+Math.sqrt(A/15)*150,cx=450,cy=380,x0=cx-len/2,x1=cx+len/2;
+    const heat=Math.min(1,T/200);const col=`rgb(${Math.round(196+heat*59)},${Math.round(140-heat*60)},${Math.round(70-heat*40)})`;
+    const g=ctx.createLinearGradient(0,cy-d/2,0,cy+d/2);g.addColorStop(0,'#fff3dc');g.addColorStop(.3,col);g.addColorStop(1,'#6a4317');
+    ctx.fillStyle=g;ctx.fillRect(x0,cy-d/2,len,d);
+    ctx.fillStyle='#d9a75c';ctx.beginPath();ctx.ellipse(x1,cy,d*.16,d/2,0,0,7);ctx.fill();ctx.strokeStyle='#6a4317';ctx.lineWidth=2;ctx.stroke();
+    ctx.beginPath();ctx.ellipse(x0,cy,d*.16,d/2,0,Math.PI/2,Math.PI*1.5);ctx.stroke();
+    // impurity dots ∝ rho
+    let seed=11;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
+    const n=Math.round(rho*len*d/180);ctx.fillStyle='rgba(40,25,10,.55)';
+    for(let k=0;k<n;k++){ctx.beginPath();ctx.arc(x0+4+rnd()*(len-8),cy-d/2+3+rnd()*(d-6),1.8,0,7);ctx.fill();}
+    // dimension marks
+    ctx.strokeStyle='#2f6bff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x0,cy+d/2+22);ctx.lineTo(x1,cy+d/2+22);ctx.stroke();
+    ctx.fillStyle='#2f6bff';ctx.font='600 14px Readex Pro';ctx.fillText('L = '+Lw.toFixed(1)+' cm',cx,cy+d/2+42);
+    R.innerHTML=H.rd([['المقاومة R',(Rv<.1?Rv.toFixed(4):Rv.toFixed(3))+' Ω'],['المقاومية ρ',rho.toFixed(2)+' Ω·cm'],['الطول L',Lw.toFixed(1)+' cm'],['المساحة A',A.toFixed(2)+' cm²']]);
+  }
+  const L=H.loop(draw);draw();return L;
+}});
+
+/* ---------- 5. AC / DC generator ---------- */
+labDef({id:'generator',grade:'3',icon:'⟳~',title:'المولّد الكهربائي',ch:'الفصل السادس',desc:'ملف يدور بين قطبي مغناطيس فيتولد تيار متناوب أو مستمر',c1:'#8e6bff',c2:'#c9b8ff',tags:['محاكاة','PhET'],wide:true,
+init(X,H){
+  const {ctx,W,H:Hh}=H.canvas(X,1000,520,'غيّر سرعة الدوران وعدد اللفات ونوع الحلقات');
+  let rps=.6,turns=5,dc=false,th=0,hist=[];
+  const ctl=X.ctl;
+  H.slider(ctl,{id:'gnS',label:'سرعة الدوران',min:0,max:3,step:.1,value:.6,unit:'دورة/ث',fmt:v=>v.toFixed(1),on:v=>{rps=v}}).init();
+  H.slider(ctl,{id:'gnN',label:'عدد لفات الملف',min:1,max:10,value:5,on:v=>{turns=v}}).init();
+  H.seg(ctl,'gnT','نوع الحلقات',[['ac','حلقتا انزلاق (متناوب)'],['dc','مبدّل (مستمر)']],'ac',v=>{dc=v==='dc';hist=[];});
+  H.note(ctl,'<b>لاحظ:</b> القوة الدافعة المحتثة أكبر ما يمكن عندما يكون مستوى الملف موازيًا للمجال، وصفر عندما يكون عموديًا عليه. زيادة السرعة أو عدد اللفات تزيد القيمة العظمى والتردد.');
+  const R=H.reads(X);let acc=0;
+  function draw(dt){
+    th+=2*Math.PI*rps*dt;const emfMax=turns*rps*2.2;let e=emfMax*Math.sin(th);if(dc)e=Math.abs(e);
+    hist.push(e);if(hist.length>360)hist.shift();
+    ctx.fillStyle='#f6f8fe';ctx.fillRect(0,0,W,Hh);
+    const cx=270,cy=200;
+    // magnet poles
+    const pole=(x,dir,cl,lbl)=>{const g=ctx.createLinearGradient(x,0,x+dir*90,0);g.addColorStop(0,cl[0]);g.addColorStop(1,cl[1]);ctx.fillStyle=g;ctx.beginPath();ctx.moveTo(x,cy-110);ctx.lineTo(x+dir*90,cy-110);ctx.lineTo(x+dir*90,cy+110);ctx.lineTo(x,cy+110);ctx.quadraticCurveTo(x+dir*40,cy,x,cy-110);ctx.fill();
+      ctx.fillStyle='#fff';ctx.font='800 34px Readex Pro';ctx.textAlign='center';ctx.fillText(lbl,x+dir*55,cy+12);};
+    pole(cx-150,-1,['#ff5a5f','#a3121c'],'N');pole(cx+150,1,['#6f8dff','#22358f'],'S');
+    ctx.strokeStyle='rgba(47,107,255,.25)';ctx.lineWidth=2;ctx.setLineDash([6,6]);for(let k=-3;k<=3;k++){ctx.beginPath();ctx.moveTo(cx-140,cy+k*28);ctx.lineTo(cx+140,cy+k*28);ctx.stroke();}ctx.setLineDash([]);
+    // rotating coil (rotation about vertical axis)
+    const hw=95*Math.cos(th),hh=75,depth=Math.sin(th);
+    ctx.lineWidth=3+turns*.7;ctx.strokeStyle=depth>0?'#b8762e':'#e8a14c';
+    ctx.beginPath();ctx.moveTo(cx-hw,cy-hh);ctx.lineTo(cx+hw,cy-hh);ctx.lineTo(cx+hw,cy+hh);ctx.lineTo(cx-hw,cy+hh);ctx.closePath();ctx.stroke();
+    ctx.fillStyle=depth>0?'rgba(232,161,76,.12)':'rgba(232,161,76,.22)';ctx.fill();
+    // axle, rings, brushes
+    ctx.strokeStyle='#6b7489';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(cx,cy+hh);ctx.lineTo(cx,cy+170);ctx.stroke();
+    if(dc){ctx.fillStyle='#c98a3a';ctx.fillRect(cx-22,cy+125,20,24);ctx.fillRect(cx+2,cy+125,20,24);}
+    else{ctx.fillStyle='#c98a3a';ctx.fillRect(cx-22,cy+112,44,14);ctx.fillRect(cx-22,cy+136,44,14);}
+    ctx.fillStyle='#3a4256';ctx.fillRect(cx-40,cy+118,14,26);ctx.fillRect(cx+26,cy+118,14,26);
+    // external circuit: wires → bulb + galvanometer
+    const bx=520,byy=150;ctx.strokeStyle='#2a3149';ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(cx-40,cy+131);ctx.lineTo(cx-70,cy+131);ctx.lineTo(cx-70,cy+165);ctx.lineTo(bx+170,cy+165);ctx.lineTo(bx+170,byy+40);ctx.moveTo(cx+40,cy+131);ctx.lineTo(bx-10,cy+131);ctx.lineTo(bx-10,byy+40);ctx.stroke();
+    // bulb
+    const glow=Math.min(1,Math.abs(e)/30);
+    if(glow>.02){const gg=ctx.createRadialGradient(bx+40,byy,4,bx+40,byy,90);gg.addColorStop(0,`rgba(255,220,90,${.85*glow})`);gg.addColorStop(1,'rgba(255,220,90,0)');ctx.fillStyle=gg;ctx.beginPath();ctx.arc(bx+40,byy,90,0,7);ctx.fill();}
+    ctx.fillStyle=`rgb(${235},${Math.round(235-30*glow)},${Math.round(235-150*glow)})`;ctx.strokeStyle='#8a90a0';ctx.lineWidth=2;ctx.beginPath();ctx.arc(bx+40,byy,30,0,7);ctx.fill();ctx.stroke();
+    ctx.fillStyle='#8a90a0';ctx.fillRect(bx+26,byy+28,28,16);
+    ctx.strokeStyle='#2a3149';ctx.beginPath();ctx.moveTo(bx-10,byy+40);ctx.lineTo(bx+26,byy+40);ctx.moveTo(bx+54,byy+40);ctx.lineTo(bx+90,byy+40);ctx.stroke();
+    // galvanometer
+    const gx=bx+130,gy=byy+20;ctx.fillStyle='#fff';ctx.strokeStyle='#2a3149';ctx.lineWidth=2;ctx.beginPath();ctx.arc(gx,gy,40,Math.PI,0);ctx.lineTo(gx+40,gy+12);ctx.lineTo(gx-40,gy+12);ctx.closePath();ctx.fill();ctx.stroke();
+    const ang=-Math.PI/2+Math.max(-1.25,Math.min(1.25,e/40*1.25));ctx.strokeStyle='#e8263a';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(gx,gy+6);ctx.lineTo(gx+Math.cos(ang)*34,gy+6+Math.sin(ang)*34);ctx.stroke();
+    ctx.fillStyle='#2a3149';ctx.font='600 13px Readex Pro';ctx.textAlign='center';ctx.fillText('G',gx,gy+28);
+    ctx.beginPath();ctx.moveTo(bx+90,byy+40);ctx.lineTo(gx-30,byy+40);ctx.moveTo(gx+30,byy+40);ctx.lineTo(bx+170,byy+40);ctx.stroke();
+    // graph
+    const G={x:430,y:385,w:540,h:120};ctx.fillStyle='#fff';ctx.strokeStyle='#c9cfdf';ctx.lineWidth=1;ctx.fillRect(G.x,G.y,G.w,G.h);ctx.strokeRect(G.x,G.y,G.w,G.h);
+    ctx.strokeStyle='#9aa3b8';ctx.beginPath();ctx.moveTo(G.x,G.y+G.h/2);ctx.lineTo(G.x+G.w,G.y+G.h/2);ctx.stroke();
+    ctx.strokeStyle='#8e6bff';ctx.lineWidth=2.5;ctx.beginPath();hist.forEach((v,i)=>{const x=G.x+i/360*G.w,y=G.y+G.h/2-v/(Math.max(6,emfMax)*1.1)*G.h/2;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
+    ctx.fillStyle='#2a3149';ctx.font='600 13px Readex Pro';ctx.textAlign='right';ctx.fillText('القوة الدافعة المحتثة مع الزمن',G.x+G.w-8,G.y+18);
+    acc+=dt;if(acc>.15){acc=0;R.innerHTML=H.rd([['القوة الدافعة الآن',e.toFixed(1)+' V'],['القيمة العظمى',emfMax.toFixed(1)+' V'],['التردد',rps.toFixed(1)+' Hz'],['نوع التيار',dc?'مستمر (موحّد الاتجاه)':'متناوب',1]]);}
+  }
+  const L=H.loop(draw);draw(0);return L;
+}});
+
+/* ---------- 6. Forces and motion (grade 1) ---------- */
+labDef({id:'forces',grade:'1',icon:'F→',title:'القوة والحركة',ch:'الأول المتوسط',desc:'ادفع الصندوق بقوة، وغيّر الكتلة والاحتكاك، ولاحظ التعجيل والسرعة',c1:'#ff6b92',c2:'#ffc0d1',tags:['محاكاة','PhET'],wide:true,
+init(X,H){
+  const {ctx,W,H:Hh}=H.canvas(X,1000,460,'غيّر القوة المؤثرة من المنزلقة');
+  const OBJ={crate:['صندوق',50,'#c58b4a'],fridge:['ثلاجة',200,'#dfe5ef'],box:['علبة صغيرة',10,'#e8a14c']};
+  const SURF={none:['بدون احتكاك (جليد مثالي)',0],ice:['جليد',.05],wood:['خشب',.25],rough:['سطح خشن',.5]};
+  let F=0,ob='crate',sf='wood',x=0,v=0,a=0,fr=0,arrows=true;
+  const ctl=X.ctl;
+  const fs=H.slider(ctl,{id:'fmF',label:'القوة المؤثرة F (موجبة = يمين)',min:-500,max:500,step:10,value:0,unit:'N',on:val=>{F=val}});fs.init();
+  ctl.insertAdjacentHTML('beforeend',`<label for="fmO">الجسم<select id="fmO">${Object.entries(OBJ).map(([k,o])=>`<option value="${k}"${k==='crate'?' selected':''}>${o[0]} (${o[1]} kg)</option>`).join('')}</select></label>
+    <label for="fmS">السطح<select id="fmS">${Object.entries(SURF).map(([k,s])=>`<option value="${k}"${k==='wood'?' selected':''}>${s[0]}${s[1]?' (μ = '+s[1]+')':''}</option>`).join('')}</select></label>`);
+  ctl.querySelector('#fmO').onchange=e=>{ob=e.target.value;};ctl.querySelector('#fmS').onchange=e=>{sf=e.target.value;};
+  H.check(ctl,'fmA','إظهار أسهم القوى',true,val=>arrows=val);
+  H.button(ctl,'fmStop','إيقاف وإعادة ↺',()=>{F=0;fs.set(0);v=0;x=0;});
+  H.note(ctl,'<b>قانون نيوتن الثاني:</b> محصلة القوى = الكتلة × التعجيل (ΣF = m·a). إذا كانت القوة المؤثرة أقل من الاحتكاك السكوني لا يتحرك الجسم.');
+  const R=H.reads(X);let acc=0;
+  function step(dt){
+    const m=OBJ[ob][1],mu=SURF[sf][1],N=m*9.8,fk=mu*N,fs=mu*1.25*N;
+    if(Math.abs(v)<1e-3){v=0;if(Math.abs(F)<=fs){fr=-F;a=0;}else{fr=-Math.sign(F)*fk;a=(F+fr)/m;v=a*dt;}}
+    else{fr=-Math.sign(v)*fk;a=(F+fr)/m;const nv=v+a*dt;if(Math.sign(nv)!==Math.sign(v)&&Math.abs(F)<=fs){v=0;a=0;fr=-F;}else v=nv;}
+    if(Math.abs(v)>20){v=Math.sign(v)*20;a=0;}
+    x+=v*dt;
+  }
+  function arrow(x0,y,f,col,lbl){if(Math.abs(f)<1)return;const len=f*.32;ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=10;ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x0+len-Math.sign(len)*14,y);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x0+len,y);ctx.lineTo(x0+len-Math.sign(len)*20,y-14);ctx.lineTo(x0+len-Math.sign(len)*20,y+14);ctx.closePath();ctx.fill();
+    ctx.font='700 14px Readex Pro';ctx.textAlign='center';H.rtl(ctx,lbl+' '+Math.abs(Math.round(f))+' N',x0+len/2,y-14);}
+  function draw(dt){
+    step(Math.min(dt,.05));
+    const gy=330;const sky=ctx.createLinearGradient(0,0,0,gy);sky.addColorStop(0,'#bfe0ff');sky.addColorStop(1,'#eef7ff');ctx.fillStyle=sky;ctx.fillRect(0,0,W,gy);
+    // scrolling background (mountains + ground marks)
+    const off=(x*60)%W;ctx.fillStyle='#b9d7b0';for(let k=-1;k<3;k++){const bx=k*500-off*.3%500;ctx.beginPath();ctx.moveTo(bx,gy);ctx.lineTo(bx+160,gy-120);ctx.lineTo(bx+330,gy);ctx.fill();}
+    ctx.fillStyle=sf==='ice'||sf==='none'?'#d9f0ff':sf==='rough'?'#8d7a63':'#c8a26e';ctx.fillRect(0,gy,W,Hh-gy);
+    ctx.fillStyle='rgba(0,0,0,.15)';for(let k=-1;k<22;k++){const mx=k*50-((x*60)%50+50)%50;ctx.fillRect(mx,gy+6,24,4);}
+    ctx.fillStyle='#2a3149';ctx.font='600 12px Readex Pro';ctx.textAlign='center';for(let k=-2;k<4;k++){const m0=Math.floor(x/5)*5+k*5,px=W/2+(m0-x)*60;if(px>0&&px<W)ctx.fillText(m0+' m',px,gy+30);}
+    // object
+    const o=OBJ[ob],sz=ob==='fridge'?[110,170]:ob==='box'?[60,50]:[110,100],cx=W/2,top=gy-sz[1];
+    ctx.fillStyle=o[2];ctx.strokeStyle='rgba(0,0,0,.35)';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(cx-sz[0]/2,top,sz[0],sz[1],6);ctx.fill();ctx.stroke();
+    if(ob==='crate'){ctx.beginPath();ctx.moveTo(cx-sz[0]/2,top);ctx.lineTo(cx+sz[0]/2,gy);ctx.moveTo(cx+sz[0]/2,top);ctx.lineTo(cx-sz[0]/2,gy);ctx.stroke();}
+    if(ob==='fridge'){ctx.beginPath();ctx.moveTo(cx-sz[0]/2,top+60);ctx.lineTo(cx+sz[0]/2,top+60);ctx.stroke();ctx.fillStyle='#8a90a0';ctx.fillRect(cx+sz[0]/2-16,top+20,5,30);ctx.fillRect(cx+sz[0]/2-16,top+80,5,40);}
+    ctx.fillStyle='#2a3149';ctx.font='700 14px Readex Pro';ctx.fillText(o[1]+' kg',cx,top-8);
+    // pusher stick figure
+    if(Math.abs(F)>0){const s=F>0?-1:1,px=cx+s*(sz[0]/2+34);ctx.strokeStyle='#2a3149';ctx.lineWidth=5;ctx.lineCap='round';
+      ctx.beginPath();ctx.arc(px,gy-150,16,0,7);ctx.stroke();ctx.beginPath();ctx.moveTo(px,gy-134);ctx.lineTo(px+s*6,gy-70);ctx.lineTo(px-s*14,gy);ctx.moveTo(px+s*6,gy-70);ctx.lineTo(px+s*30,gy);
+      ctx.moveTo(px,gy-115);ctx.lineTo(cx+s*sz[0]/2,gy-Math.min(sz[1],110)+20);ctx.stroke();ctx.lineCap='butt';}
+    if(arrows){arrow(cx,top-60,F,'#2f6bff','القوة');arrow(cx,top-110,fr,'#e8263a','الاحتكاك');arrow(cx,top-160,F+fr,'#16a36b','المحصلة');}
+    // speedometer
+    const sx=110,sy=110;ctx.fillStyle='#fff';ctx.strokeStyle='#2a3149';ctx.lineWidth=3;ctx.beginPath();ctx.arc(sx,sy,62,0,7);ctx.fill();ctx.stroke();
+    for(let k=0;k<=10;k++){const an=Math.PI*.75+k/10*Math.PI*1.5;ctx.beginPath();ctx.moveTo(sx+Math.cos(an)*52,sy+Math.sin(an)*52);ctx.lineTo(sx+Math.cos(an)*60,sy+Math.sin(an)*60);ctx.stroke();}
+    const an=Math.PI*.75+Math.min(1,Math.abs(v)/20)*Math.PI*1.5;ctx.strokeStyle='#e8263a';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(sx+Math.cos(an)*48,sy+Math.sin(an)*48);ctx.stroke();
+    ctx.fillStyle='#2a3149';ctx.font='700 15px Readex Pro';ctx.textAlign='center';ctx.fillText(Math.abs(v).toFixed(1)+' m/s',sx,sy+40);
+    acc+=dt;if(acc>.12){acc=0;R.innerHTML=H.rd([['القوة المؤثرة',F+' N'],['قوة الاحتكاك',Math.round(fr)+' N'],['محصلة القوى',Math.round(F+fr)+' N'],['التعجيل a',a.toFixed(2)+' m/s²'],['السرعة',v.toFixed(2)+' m/s'],['المسافة',x.toFixed(1)+' m']]);}
+  }
+  const L=H.loop(draw);draw(0);return L;
+}});
+
+/* ---------- 7. States of matter (grade 1) ---------- */
+labDef({id:'states',grade:'1',icon:'❄☁',title:'حالات المادة',ch:'الأول المتوسط',desc:'سخّن أو برّد الجزيئات وشاهد تحوّلها بين الصلب والسائل والغاز',c1:'#2fb7d6',c2:'#a6ecfa',tags:['محاكاة','PhET'],
+init(X,H){
+  const {ctx,W,H:Hh}=H.canvas(X,860,560,'استعمل منزلقة التسخين والتبريد');
+  const SIG=30,BW=17,BH=15,N=81,G=.35,RC=2.5,RC2=RC*RC;
+  const px=[],py=[],vx=[],vy=[],fx=new Float64Array(N),fy=new Float64Array(N);
+  let Tt=.15,heat=0;
+  function lattice(){px.length=py.length=vx.length=vy.length=0;const k=9,s=1.12;for(let i=0;i<N;i++){px.push(BW/2-(k-1)*s/2+(i%k)*s+((Math.floor(i/k))%2)*s/2*0);py.push(BH-.7-Math.floor(i/k)*s*.97);vx.push((Math.random()-.5)*.2);vy.push((Math.random()-.5)*.2);}}
+  lattice();
+  function forces(){
+    fx.fill(0);fy.fill(0);
+    for(let i=0;i<N;i++){fy[i]+=G;
+      for(let j=i+1;j<N;j++){const dx=px[i]-px[j],dy=py[i]-py[j],r2=dx*dx+dy*dy;if(r2>RC2)continue;
+        const r2c=Math.max(r2,.64),ir2=1/r2c,ir6=ir2*ir2*ir2;let f=24*ir2*ir6*(2*ir6-1);if(f>500)f=500;
+        fx[i]+=f*dx;fy[i]+=f*dy;fx[j]-=f*dx;fy[j]-=f*dy;}}
+  }
+  function temp(){let k=0;for(let i=0;i<N;i++)k+=vx[i]*vx[i]+vy[i]*vy[i];return k/(2*N);}
+  function integrate(sub){
+    const dt=.004;
+    for(let s=0;s<sub;s++){
+      forces();
+      for(let i=0;i<N;i++){vx[i]+=fx[i]*dt;vy[i]+=fy[i]*dt;const sp=Math.hypot(vx[i],vy[i]);if(sp>8){vx[i]*=8/sp;vy[i]*=8/sp;}
+        px[i]+=vx[i]*dt;py[i]+=vy[i]*dt;
+        if(px[i]<.5){px[i]=.5;vx[i]=Math.abs(vx[i]);}if(px[i]>BW-.5){px[i]=BW-.5;vx[i]=-Math.abs(vx[i]);}
+        if(py[i]<.5){py[i]=.5;vy[i]=Math.abs(vy[i]);}if(py[i]>BH-.5){py[i]=BH-.5;vy[i]=-Math.abs(vy[i]);}}
+    }
+    const T=temp();if(T>1e-6){const lam=Math.max(.9,Math.min(1.1,Math.sqrt(1+.06*(Tt/T-1))));for(let i=0;i<N;i++){vx[i]*=lam;vy[i]*=lam;}}
+  }
+  const ctl=X.ctl;
+  ctl.insertAdjacentHTML('beforeend','<div class="seg" id="stP" role="group" aria-label="الحالة"><button type="button" data-v="s">❄ صلب</button><button type="button" data-v="l">💧 سائل</button><button type="button" data-v="g">☁ غاز</button></div>');
+  ctl.querySelectorAll('#stP button').forEach(b=>b.onclick=()=>{const v=b.dataset.v;Tt={s:.15,l:.45,g:1.1}[v];if(v==='s')lattice();});
+  const hs=H.slider(ctl,{id:'stH',label:'تبريد ← → تسخين',min:-100,max:100,value:0,fmt:v=>v>0?'تسخين':v<0?'تبريد':'متوقف',on:v=>{heat=v/100}});hs.init();
+  hs.input.addEventListener('pointerup',()=>{hs.set(0);heat=0;});hs.input.addEventListener('touchend',()=>{hs.set(0);heat=0;});
+  H.note(ctl,'<b>لاحظ:</b> في الصلب تهتز الجزيئات حول مواضع ثابتة، وفي السائل تنزلق فوق بعضها، وفي الغاز تتحرك بحرية وبسرعة كبيرة. التسخين يزيد سرعة (طاقة) الجزيئات.');
+  const R=H.reads(X);let acc=0;
+  const toK=T=>120+T*420;
+  function draw(dt){
+    Tt=Math.max(.03,Math.min(1.6,Tt+heat*dt*.35));
+    integrate(10);
+    const T=temp(),K=toK(T),C=K-273,state=C<0?'صلب':C<100?'سائل':'غاز';
+    ctx.fillStyle='#f6f8fe';ctx.fillRect(0,0,W,Hh);
+    const ox=40,oy=30,bw=BW*SIG,bh=BH*SIG;
+    ctx.fillStyle='#fff';ctx.fillRect(ox,oy,bw,bh);ctx.strokeStyle='#7e8aa8';ctx.lineWidth=5;ctx.strokeRect(ox,oy,bw,bh);
+    for(let i=0;i<N;i++){const x=ox+px[i]*SIG,y=oy+py[i]*SIG,g=ctx.createRadialGradient(x-5,y-6,2,x,y,SIG*.5);g.addColorStop(0,'#d7f4ff');g.addColorStop(1,'#1f8fd0');ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,SIG*.47,0,7);ctx.fill();}
+    // stove
+    const sy=oy+bh+14;ctx.fillStyle=heat>0?`rgba(255,${Math.round(140-heat*80)},40,1)`:heat<0?'#7fd0ff':'#9aa3b8';ctx.beginPath();ctx.roundRect(ox+bw/2-110,sy,220,26,8);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='700 14px Readex Pro';ctx.textAlign='center';ctx.fillText(heat>0?'🔥 تسخين':heat<0?'❄ تبريد':'—',ox+bw/2,sy+18);
+    // thermometer
+    const tx=ox+bw+70,ty=60,th=380;ctx.fillStyle='#fff';ctx.strokeStyle='#7e8aa8';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(tx-12,ty,24,th,12);ctx.fill();ctx.stroke();ctx.beginPath();ctx.arc(tx,ty+th+16,22,0,7);ctx.fill();ctx.stroke();
+    const frac=Math.max(0,Math.min(1,(K-100)/600));ctx.fillStyle='#e8263a';ctx.fillRect(tx-6,ty+th-frac*th,12,frac*th+10);ctx.beginPath();ctx.arc(tx,ty+th+16,15,0,7);ctx.fill();
+    ctx.fillStyle='#2a3149';ctx.font='700 15px Readex Pro';ctx.fillText(Math.round(K)+' K',tx,ty-26);ctx.font='600 13px Readex Pro';ctx.fillText(Math.round(C)+' °C',tx,ty-8);
+    [[273,'0°C'],[373,'100°C']].forEach(([k,l])=>{const yy=ty+th-Math.max(0,Math.min(1,(k-100)/600))*th;ctx.strokeStyle='#2a3149';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(tx+12,yy);ctx.lineTo(tx+22,yy);ctx.stroke();ctx.textAlign='left';ctx.fillText(l,tx+26,yy+5);ctx.textAlign='center';});
+    ctx.font='700 20px Readex Pro';ctx.fillStyle='#1f8fd0';H.rtl(ctx,'الحالة: '+state,ox+bw/2,oy-8>12?oy-8:22);
+    acc+=dt;if(acc>.15){acc=0;R.innerHTML=H.rd([['درجة الحرارة',Math.round(C)+' °C'],['بالكلفن',Math.round(K)+' K'],['حالة المادة (الماء)',state,1]]);}
+  }
+  const L=H.loop(dt=>draw(Math.min(dt,.05)));draw(0);return L;
 }});
 
 (function(){
