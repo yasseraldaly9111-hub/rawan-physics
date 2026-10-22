@@ -608,7 +608,7 @@ body.noscroll{overflow:hidden}
 .exp.full .stage{grid-column:2;grid-row:1/span 2;display:flex;align-items:center;justify-content:center;min-height:0;height:100%}
 .exp.full .stage>canvas,.exp.full .stage>svg{max-width:100%;max-height:100%;height:auto}
 .exp.full .stage>table,.exp.full .stage>div{max-height:100%;overflow:auto;width:100%}
-@media (max-width:760px){
+@media (max-width:760px) and (orientation:portrait){
   .exp.full{overflow:auto}
   .exp.full .body,.exp.full.wide .body{display:flex;flex-direction:column;flex:none}
   .exp.full .stage{order:-1;height:auto;min-height:0}
@@ -656,6 +656,29 @@ body.noscroll{overflow:hidden}
 .brand .mono{animation:monoGlow 4s ease-in-out infinite}
 @keyframes monoGlow{0%,100%{box-shadow:0 0 0 3px rgba(124,156,255,.18),0 6px 18px rgba(80,110,255,.45)}50%{box-shadow:0 0 0 5px rgba(62,224,240,.22),0 6px 24px rgba(62,224,240,.5)}}
 @media (prefers-reduced-motion:reduce){#bgfx,.formulas{display:none}.rv{opacity:1;transform:none}}
+/* phones: rotate hint (portrait) and compact landscape layout */
+.rotate-hint{display:none}
+@media (max-width:760px) and (orientation:portrait){
+  .exp.full:not(.hint-off) .rotate-hint{display:flex;align-items:center;gap:10px;flex:none;padding:8px 12px;border-radius:12px;background:rgba(124,156,255,.14);border:1px solid rgba(124,156,255,.4);color:var(--ink);font-size:14px}
+  .rotate-hint .ri{font-size:22px;animation:tilt 1.8s ease-in-out infinite}
+  .rotate-hint span:nth-child(2){flex:1}
+}
+@keyframes tilt{0%,100%{transform:rotate(0)}50%{transform:rotate(-90deg)}}
+@media (max-height:540px) and (orientation:landscape){
+  .exp.full{padding:calc(env(safe-area-inset-top,0px) + 6px) max(10px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 6px) max(10px,env(safe-area-inset-left,0px));gap:6px}
+  .exp.full header{gap:8px;align-items:center}
+  .exp.full header .ic,.exp.full header .badges{display:none}
+  .exp.full header h2{font-size:16px}
+  .exp.full header .btn{padding:5px 10px;font-size:13px}
+  .exp.full .body,.exp.full.wide .body{grid-template-columns:minmax(190px,250px) minmax(0,1fr);gap:8px}
+  .exp.full .ctl{gap:8px;font-size:13px}
+  .exp.full .ctl label{font-size:13px}
+  .exp.full .ctl .note{font-size:12.5px;padding:8px 10px}
+  .exp.full .reads{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px}
+  .exp.full .reads .rd{padding:6px 8px}
+  .exp.full .stage{padding:4px}
+  .exp.full .stage .hint{display:none}
+}
 
 #boot{position:fixed;inset:0;z-index:200;display:grid;place-items:center;background:#070b18;color:#cdd5f2;font-family:"Readex Pro",Tahoma,sans-serif;text-align:center;padding:24px}
 #boot .sp{width:46px;height:46px;border-radius:50%;border:4px solid rgba(124,156,255,.25);border-top-color:#7c9cff;margin:0 auto 14px;animation:spin 1s linear infinite}

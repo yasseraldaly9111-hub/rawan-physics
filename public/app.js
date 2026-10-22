@@ -242,9 +242,14 @@ function ensure(o,el){
 }
 /* ---------- full screen ("play") ---------- */
 let full=null;
+const PORTRAIT_PHONE=matchMedia('(max-width:760px) and (orientation:portrait)');
+const TOUCH=matchMedia('(pointer:coarse)').matches;
+const unlockOrient=()=>{try{screen.orientation&&screen.orientation.unlock&&screen.orientation.unlock();}catch(e){}};
+PORTRAIT_PHONE.addEventListener&&PORTRAIT_PHONE.addEventListener('change',()=>{if(full)requestAnimationFrame(()=>fit(full));});
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)unlockOrient();if(full)requestAnimationFrame(()=>fit(full));});
 function fit(el){
   const st=$('.stage',el),m=st&&st.querySelector(':scope>canvas,:scope>svg');if(!m)return;
-  if(!el.classList.contains('full')||innerWidth<=760){m.style.width='';return;}
+  if(!el.classList.contains('full')||PORTRAIT_PHONE.matches){m.style.width='';return;}
   let ar=1;if(m.tagName.toLowerCase()==='svg'){const vb=m.viewBox&&m.viewBox.baseVal;ar=vb&&vb.height?vb.width/vb.height:1.6;}else ar=m.width/m.height||1.6;
   const pad=parseFloat(getComputedStyle(st).paddingLeft)*2||0;
   m.style.width=Math.max(160,Math.min(st.clientWidth-pad,(st.clientHeight-pad)*ar))+'px';
@@ -252,6 +257,10 @@ function fit(el){
 function enterFull(o,el){
   if(full)exitFull(true);
   full=el;el.classList.add('full');document.body.classList.add('noscroll');
+  // phones: real full screen + landscape (Android); iPhone gets a "rotate" hint instead
+  if(TOUCH&&el.requestFullscreen){el.requestFullscreen({navigationUI:'hide'}).then(()=>{if(screen.orientation&&screen.orientation.lock)return screen.orientation.lock('landscape');}).catch(()=>{});}
+  if(!$('.rotate-hint',el))el.insertAdjacentHTML('afterbegin','<div class="rotate-hint" role="note"><span class="ri" aria-hidden="true">📱↻</span><span>دوّر الموبايل بالعرض حتى تظهر التجربة كاملة مثل الحاسبة</span><button type="button" class="btn sm" data-hint-x aria-label="إخفاء">✕</button></div>');
+  $('[data-hint-x]',el).onclick=()=>el.classList.add('hint-off');
   $('[data-full]',el).hidden=true;$('[data-min]',el).hidden=false;$('[data-fs]',el).hidden=!el.requestFullscreen;
   insts.forEach((i,id)=>{if('x-'+id!==el.id&&i.stop)i.stop();});
   const inst=ensure(o,el);inst.start&&inst.start();
@@ -261,7 +270,8 @@ function enterFull(o,el){
 function exitFull(keep){
   const el=full;if(!el)return;full=null;
   if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
-  el.classList.remove('full');document.body.classList.remove('noscroll');
+  unlockOrient();
+  el.classList.remove('full','hint-off');document.body.classList.remove('noscroll');
   $('[data-full]',el).hidden=false;$('[data-min]',el).hidden=true;$('[data-fs]',el).hidden=true;fit(el);
   if(!keep){insts.forEach(i=>{if(i._vis&&i.start)i.start();else if(!i._vis&&i.stop)i.stop();});el.scrollIntoView({block:'center'});$('[data-full]',el).focus();}
   window.dispatchEvent(new Event('resize'));
