@@ -1380,7 +1380,7 @@ function renderTeacher(){
       <div class="seg" id="tg" role="group" aria-label="الصف">${['3','1'].map(x=>`<button type="button" data-v="${x}" aria-pressed="${x===g0}">${GR[x]}</button>`).join('')}</div>
       <div class="two"><label>تاريخ الدرس<input id="pDate" type="date" value="${esc(p.date||todayISO())}"></label><label>عنوان الدرس<input id="pLesson" maxlength="80" placeholder="مثال: قانون أوم" value="${esc(p.lesson||'')}"></label></div>
       <label>أسماء المشاركين (كل اسم في سطر)<textarea id="pNames" rows="7" placeholder="علي حسين&#10;زهراء كريم&#10;…">${esc((p.names||[]).join('\n'))}</textarea></label>
-      <div class="row"><button class="btn pri" id="pSave" type="button">حفظ ونشر على الواجهة</button><button class="btn" id="pToday" type="button">قائمة جديدة لليوم</button><span class="count" id="pSt" role="status"></span></div>
+      <div class="row"><button class="btn pri" id="pSave" type="button">حفظ ونشر على الواجهة</button><button class="btn" id="pToday" type="button">قائمة جديدة لليوم</button><button class="btn danger" id="pClear" type="button"${(p.names||[]).length?'':' disabled'}>🗑 مسح المشاركين</button><span class="count" id="pSt" role="status"></span></div>
     </section>
     <section class="card tform"><h2 class="ctitle"><span class="ci">📢</span>تبليغ جديد للطلاب</h2>
       <label>العنوان<input id="aTitle" maxlength="90" placeholder="مثال: امتحان الفصل الثالث يوم الأحد"></label>
@@ -1424,6 +1424,10 @@ function renderTeacher(){
     </div><p class="footer">مسجّلة باسم <span dir="ltr">${esc(B.user.email)}</span> <button class="btn sm" id="tOut" type="button">تسجيل الخروج</button></p>`;
   $$('#tg button').forEach(b=>b.onclick=()=>{ss.set('rm-tg',b.dataset.v);renderTeacher();});
   $('#pToday').onclick=()=>{$('#pDate').value=todayISO();$('#pLesson').value='';$('#pNames').value='';$('#pNames').focus();};
+  $('#pClear').onclick=async()=>{
+    if(!confirm(`مسح أسماء المشاركين من واجهة ${GR[g0]}؟`))return;const st=$('#pSt');st.textContent='جارٍ المسح…';
+    try{await db.collection('participants').doc(g0).delete();toast('مُسحت أسماء المشاركين ✔');}catch(e){st.textContent=errText(e);}
+  };
   $('#pSave').onclick=async()=>{
     const names=[...new Set($('#pNames').value.split(/\n|،|,/).map(s=>s.trim().slice(0,40)).filter(Boolean))].slice(0,80),st=$('#pSt');
     st.textContent='جارٍ الحفظ…';
