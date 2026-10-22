@@ -18,6 +18,17 @@ service cloud.firestore {
     function isAdmin() { return isOwnerAdmin() || myRole() == 'admin'; }
     // isTeacher: أي مستخدم من الكادر (مدير أو أستاذ)
     function isTeacher() { return isOwnerAdmin() || myRole() in ['admin', 'teacher']; }
+
+    // رمز الصف: إذا لم تضع الأستاذة رمزًا للصف يبقى محتواه مفتوحًا للجميع.
+    // وإذا وُضع رمز، يُشترط أن يكون الطالب قد أدخل الرمز الحالي نفسه.
+    function codePath(g) { return /databases/$(database)/documents/classcodes/$(g); }
+    function accessPath(g) { return /databases/$(database)/documents/access/$(request.auth.uid)/grades/$(g); }
+    function hasAccess(g) {
+      return !exists(codePath(g))
+        || (signedIn() && exists(accessPath(g))
+            && get(accessPath(g)).data.code == get(codePath(g)).data.code);
+    }
+    function anyAccess() { return hasAccess('1') || hasAccess('3'); }
     function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
     function msgsOpen() {
       return get(/databases/$(database)/documents/settings/site).data.get('studentMsgs', false) == true;
@@ -35,10 +46,37 @@ service cloud.firestore {
     }
 
     // محتوى عام: يقرؤه الجميع، ويعدّله الكادر فقط
-    match /chapters/{id}      { allow read: if true; allow write: if isTeacher(); }
+    match /chapters/{id} {
+      allow read: if isTeacher() || hasAccess(resource.data.grade);
+      allow write: if isTeacher();
+    }
     match /settings/{id}      { allow read: if true; allow write: if isTeacher(); }
-    match /participants/{g}   { allow read: if true; allow write: if isTeacher() && g in ['1', '3']; }
-    match /announcements/{id} { allow read: if true; allow write: if isTeacher(); }
+    match /participants/{g} {
+      allow read: if isTeacher() || hasAccess(g);
+      allow write: if isTeacher() && g in ['1', '3'];
+    }
+    match /announcements/{id} {
+      allow read: if isTeacher()
+        || (resource.data.grade == 'all' ? anyAccess() : hasAccess(resource.data.grade));
+      allow write: if isTeacher();
+    }
+
+    // رموز الصفوف: لا يقرؤها إلا الكادر
+    match /classcodes/{g} {
+      allow read: if isTeacher();
+      allow write: if isTeacher() && g in ['1', '3']
+        && request.resource.data.keys().hasOnly(['code', 'updated'])
+        && request.resource.data.code is string
+        && request.resource.data.code.size() >= 4 && request.resource.data.code.size() <= 20;
+      allow delete: if isTeacher();
+    }
+    // ما أدخله الطالب من رموز: يُقبل فقط إذا طابق الرمز الحالي للصف
+    match /access/{uid}/grades/{g} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid) && g in ['1', '3'] && exists(codePath(g))
+        && request.resource.data.keys().hasOnly(['code', 'at'])
+        && request.resource.data.code == get(codePath(g)).data.code;
+    }
 
     // الملزمة PDF وأي ملفات خاصة: للأستاذة فقط (قراءة وكتابة)
     match /private_files/{path=**} { allow read, write: if isTeacher(); }

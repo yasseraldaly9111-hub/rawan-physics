@@ -27,8 +27,17 @@ function chCard(c){
     <div class="meta"><span class="no">${c.num}</span><b>${c.title}</b><small>${c.topics}</small>
     <div class="row" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><span class="tag" style="--gc:${c.style.match(/--c1:([^;]+)/)[1]}">${ar(wzN)} سؤالًا وزاريًا</span></div></div></a>`;
 }
+const LOCK=D.locked||{};
+const GNAME={'1':'الأول المتوسط','3':'الثالث المتوسط'};
+function lockCard(g){return `<form class="card lockform" data-g="${g}" autocomplete="off"><span class="ci">🔐</span><div class="lf-body">
+  <b>مادة ${GNAME[g]} محمية برمز الصف</b><p>اطلب رمز الصف من الأستاذة واكتبه هنا مرة واحدة، فتُفتح لك المادة والأسئلة على هذا الجهاز.</p>
+  <div class="row"><input name="code" required minlength="4" maxlength="20" dir="ltr" placeholder="رمز الصف" aria-label="رمز الصف ${GNAME[g]}"><button class="btn pri" type="submit">دخول</button></div>
+  <span class="count lf-st" role="status"></span></div></form>`;}
+window.APP.lockCard=lockCard;
 function renderGrade(g){
   const v=$('#v-grade');
+  if(LOCK[g]){v.innerHTML=`<span class="kick">${GNAME[g]}</span><h1 class="h1">فصول ${GNAME[g]}</h1>${lockCard(g)}
+    <p class="lede" style="margin-top:16px">بإمكانك تجربة <a href="#lab">مختبر المحاكاة</a> من دون رمز.</p>`;return;}
   const labN=(window.LAB_COUNT&&window.LAB_COUNT[g])||0;
   if(g==='3'){
     v.innerHTML=`<span class="kick">الصف الثالث المتوسط</span><h1 class="h1">فصول الثالث المتوسط</h1>
@@ -82,10 +91,11 @@ function prepWz(root,ch){
   $$('.wzp',root).forEach(p=>{p.dataset.ch=ch;p.dataset.type='p';p.dataset.y=yearsOf(p).join(' ');const s=$('.sol',p);if(s)addReveal(s,'أظهر الحل');});
 }
 const wzList=$('#wzList');
-wzList.innerHTML=D.chapters.map(c=>`<section class="wzgroup" data-group="${c.i}" style="${darkC3(c.style)}"><h2>${c.num}: ${c.title} <span data-cnt></span></h2><div class="reader">${c.wz}</div></section>`).join('');
+if(LOCK['3'])$('#v-wizari .filters').hidden=true;
+wzList.innerHTML=LOCK['3']?lockCard('3'):D.chapters.map(c=>`<section class="wzgroup" data-group="${c.i}" style="${darkC3(c.style)}"><h2>${c.num}: ${c.title} <span data-cnt></span></h2><div class="reader">${c.wz}</div></section>`).join('');
 $$('.wzgroup').forEach(g=>prepWz(g,g.dataset.group));
 const items=$$('[data-type]',wzList);
-$('#statWz').textContent='+'+ar(Math.floor(items.length/10)*10);
+if(items.length)$('#statWz').textContent='+'+ar(Math.floor(items.length/10)*10);
 const years=[...new Set(items.flatMap(e=>e.dataset.y.split(' ').filter(Boolean)))].sort();
 $('#yearSel').insertAdjacentHTML('beforeend',years.map(y=>`<option value="${y}">${ar(y)}</option>`).join(''));
 const chF=$('#chFilter');
@@ -95,6 +105,7 @@ $$('.chip',chF).forEach(b=>b.onclick=()=>{fCh=b.dataset.ch;$$('.chip',chF).forEa
 $('#yearSel').onchange=applyF;$('#typeSel').onchange=applyF;$('#wzSearch').oninput=applyF;
 const norm=t=>t.replace(/[ً-ْـ]/g,'').replace(/[أإآ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي');
 function applyF(){
+  if(LOCK['3'])return;
   const y=$('#yearSel').value,t=$('#typeSel').value,q=norm($('#wzSearch').value.trim());let n=0;
   items.forEach(e=>{const ok=(!fCh||e.dataset.ch===fCh)&&(!y||e.dataset.y.includes(y))&&(!t||e.dataset.type===t)&&(!q||norm(e.textContent).includes(q));e.classList.toggle('hid',!ok);if(ok)n++;});
   $$('.wzgroup').forEach(g=>{
@@ -1249,6 +1260,9 @@ const errText=e=>({'permission-denied':'لا تملك صلاحية تنفيذ ه
 /* ---------- live state ---------- */
 const S={participants:{},announcements:[],settings:{studentMsgs:false},loaded:false};
 const B={user:null,teacher:false,admin:false,role:'',name:'',authReady:false};
+const PLOCK=Object.assign({},(window.__DATA__&&window.__DATA__.locked)||{});   // grade -> needs class code
+const locked=g=>!B.teacher&&!!PLOCK[g];
+const lockHint=(g,what)=>`<div class="empty-mini">🔐 أدخل رمز صف ${GR[g]} لعرض ${what}. <a href="#g${g}">إدخال الرمز</a></div>`;
 
 function toast(t){let el=$('#rmToast');if(!el){el=document.createElement('div');el.id='rmToast';el.className='toast ui';el.setAttribute('role','status');document.body.append(el);}
   el.textContent=t;el.classList.add('on');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('on'),3200);}
@@ -1259,6 +1273,7 @@ function annFor(g){return S.announcements.filter(a=>a.grade==='all'||a.grade===g
 function annCard(a,del){return `<article class="card ann${a.pinned?' pin':''}"><header><span class="tag" style="--gc:${a.grade==='1'?'#3ee8b0':a.grade==='3'?'#7c9cff':'#ffc65c'}">${GR[a.grade]||''}</span>${a.pinned?'<span class="tag" style="--gc:#ff6b92">مثبّت</span>':''}<time>${fmtTs(a.ts)}</time>${del?`<button type="button" class="btn sm danger" data-del="${esc(a.id)}">حذف</button>`:''}</header><h3>${esc(a.title)}</h3>${a.body?`<p>${esc(a.body)}</p>`:''}</article>`;}
 function partBlock(g,big){
   if(!S.loaded)return '<div class="empty-mini">جارٍ التحميل…</div>';
+  if(locked(g))return lockHint(g,'المشاركين');
   const p=S.participants[g];
   if(!p||!p.names||!p.names.length)return `<div class="empty-mini">لم تُضف أسماء لدرس ${GR[g]} بعد.</div>`;
   const isToday=p.date===todayISO();
@@ -1276,7 +1291,7 @@ function renderHome(){
   host.innerHTML=`<div class="classgrid">
     <section class="card pcard"><h2 class="ctitle"><span class="ci">🏅</span>المشاركون في الدرس <small>${GR[g]}</small></h2>${partBlock(g)}</section>
     <section class="card acard"><h2 class="ctitle"><span class="ci">📢</span>تبليغات الأستاذة</h2>
-      ${anns.length?anns.map(a=>`<a class="annmini" href="#board"><b>${esc(a.title)}</b><small>${fmtTs(a.ts)}${a.pinned?' • مثبّت':''}</small></a>`).join(''):`<div class="empty-mini">${S.loaded?'لا توجد تبليغات حاليًا.':'جارٍ التحميل…'}</div>`}
+      ${!anns.length&&locked(g)?lockHint(g,'التبليغات'):anns.length?anns.map(a=>`<a class="annmini" href="#board"><b>${esc(a.title)}</b><small>${fmtTs(a.ts)}${a.pinned?' • مثبّت':''}</small></a>`).join(''):`<div class="empty-mini">${S.loaded?'لا توجد تبليغات حاليًا.':'جارٍ التحميل…'}</div>`}
       <a class="btn" href="#board" style="margin-top:auto">كل التبليغات${S.settings.studentMsgs?' والمراسلة':''}</a></section></div>`;
 }
 
@@ -1293,7 +1308,7 @@ function renderBoard(){
   }
   $('#boardLede').textContent=`هنا تنشر الأستاذة التبليغات والواجبات ومواعيد الامتحانات لطلاب ${GR[g]}.`;
   const anns=annFor(g);
-  $('#boardAnn').innerHTML=anns.length?anns.map(a=>annCard(a)).join(''):`<p class="card empty">${S.loaded?'لا توجد تبليغات حاليًا لهذا الصف.':'جارٍ التحميل…'}</p>`;
+  $('#boardAnn').innerHTML=!anns.length&&locked(g)?window.APP.lockCard(g):anns.length?anns.map(a=>annCard(a)).join(''):`<p class="card empty">${S.loaded?'لا توجد تبليغات حاليًا لهذا الصف.':'جارٍ التحميل…'}</p>`;
   $('#boardPart').innerHTML=partBlock(g,true);
   ls.set('rm-seen',String(Date.now()));badge();
   renderMsgBox();
@@ -1383,6 +1398,12 @@ function renderTeacher(){
       <p class="count">يُستعمل لرفع مادة الفصول والأسئلة الوزارية إلى قاعدة البيانات أو تحديثها (مثل ملف <span dir="ltr">seed/chapters-g3.json</span>).</p>
       <span class="count" id="cSt" role="status"></span>
     </section>
+    <section class="card tform" id="codesSec"><h2 class="ctitle"><span class="ci">🔐</span>رموز الصفوف</h2>
+      ${['3','1'].map(g=>`<div class="coderow" data-g="${g}"><b>${GR[g]}</b><span class="cur" dir="ltr">…</span>
+        <div class="row"><input maxlength="20" dir="ltr" placeholder="رمز جديد" aria-label="رمز جديد لصف ${GR[g]}"><button type="button" class="btn sm" data-gen>توليد</button><button type="button" class="btn sm pri" data-save>حفظ</button><button type="button" class="btn sm danger" data-open>فتح للجميع</button></div></div>`).join('')}
+      <p class="count">بلا رمز تبقى مادة الصف مفتوحة للجميع. عند وضع رمز أو تغييره يُطلب من كل طالب إدخال الرمز الحالي مرة واحدة على جهازه.</p>
+      <span class="count" id="ccSt" role="status"></span>
+    </section>
     <section class="card tform"><h2 class="ctitle"><span class="ci">📄</span>الملزمة PDF <small>للكادر فقط</small></h2>
       <p class="count" id="fInfo">جارٍ التحقق…</p>
       <div class="row"><button class="btn pri" id="fGet" type="button" hidden>تنزيل الملزمة</button><span class="count" id="fSt" role="status"></span></div>
@@ -1422,6 +1443,7 @@ function renderTeacher(){
   if(B.admin){$('#uForm').onsubmit=createStaff;watchStaff();}
   $('#fFile').onchange=e=>uploadPdf(e.target.files[0]);
   $('#fGet').onclick=downloadPdf;
+  wireCodes();
   pdfInfo();
   watchInbox();
 }
@@ -1505,6 +1527,32 @@ function drawStaff(){
   });
 }
 
+/* ---------- class codes ---------- */
+const CODE_CH='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const normCode=c=>String(c||'').trim().toUpperCase().replace(/\s+/g,'');
+function wireCodes(){
+  const st=$('#ccSt');
+  $$('#codesSec .coderow').forEach(row=>{
+    const g=row.dataset.g,cur=$('.cur',row),inp=$('input',row),ref=db.collection('classcodes').doc(g);
+    const show=()=>ref.get().then(d=>{cur.textContent=d.exists?d.data().code:'مفتوح للجميع (بلا رمز)';cur.classList.toggle('open',!d.exists);}).catch(()=>{cur.textContent='—';});
+    show();
+    $('[data-gen]',row).onclick=()=>{let c='';const a=new Uint32Array(6);crypto.getRandomValues(a);a.forEach(x=>c+=CODE_CH[x%CODE_CH.length]);inp.value=c;};
+    $('[data-save]',row).onclick=async()=>{const c=normCode(inp.value);if(c.length<4){st.textContent='الرمز يجب أن يكون ٤ أحرف على الأقل.';inp.focus();return;}
+      try{await ref.set({code:c,updated:Date.now()});inp.value='';show();st.textContent=`حُفظ رمز ${GR[g]}: ${c}`;toast('حُفظ رمز الصف ✔');}catch(e){st.textContent=errText(e);}};
+    $('[data-open]',row).onclick=async()=>{if(!confirm(`فتح مادة ${GR[g]} للجميع بلا رمز؟`))return;try{await ref.delete();show();toast('أصبحت المادة مفتوحة للجميع');}catch(e){st.textContent=errText(e);}};
+  });
+}
+document.addEventListener('submit',async e=>{
+  const f=e.target.closest&&e.target.closest('.lockform');if(!f)return;e.preventDefault();
+  const g=f.dataset.g,code=normCode(f.elements.code.value),st=$('.lf-st',f),btn=$('button',f);if(!code)return;
+  st.textContent='جارٍ التحقق…';btn.disabled=true;
+  try{
+    if(!auth.currentUser)await auth.signInAnonymously();
+    await db.collection('access').doc(auth.currentUser.uid).collection('grades').doc(g).set({code,at:Date.now()});
+    st.textContent='تم ✔ جارٍ فتح المادة…';setTimeout(()=>location.reload(),600);
+  }catch(err){btn.disabled=false;st.textContent=err&&err.code==='permission-denied'?'الرمز غير صحيح. تأكد منه واطلبه من الأستاذة.':err&&err.code==='auth/operation-not-allowed'?'الدخول غير مفعّل في إعدادات الموقع.':errText(err);}
+});
+
 async function importChapters(file){
   const st=$('#cSt');if(!file)return;
   try{
@@ -1570,14 +1618,27 @@ window.CLASS={
   init(){
     renderAll();
     const tl=$('#teacherLogin');if(tl)tl.onclick=()=>{location.hash='teacher';};
-    let got=0;const ready=()=>{if(++got>=3)S.loaded=true;refreshView();};
-    const fail=()=>{S.loaded=true;refreshView();};
-    let first=[true,true,true];const once=(k,f)=>s=>{f(s);if(first[k]){first[k]=false;ready();}else refreshView();};
-    db.collection('settings').doc('site').onSnapshot(once(0,s=>{S.settings=Object.assign({studentMsgs:false},s.exists?s.data():{});}),fail);
-    db.collection('participants').onSnapshot(once(1,s=>{const P={};s.docs.forEach(d=>P[d.id]=d.data());S.participants=P;}),fail);
-    db.collection('announcements').orderBy('ts','desc').limit(60).onSnapshot(once(2,s=>{S.announcements=s.docs.map(d=>({id:d.id,...d.data()}));}),fail);
-    let roleUnsub=null;
+    db.collection('settings').doc('site').onSnapshot(s=>{S.settings=Object.assign({studentMsgs:false},s.exists?s.data():{});refreshView();},()=>{});
+    // participants & announcements: what each viewer may read depends on staff role / class codes
+    let subs=[],subKey='';
+    function subscribe(){
+      const key=(B.teacher?'T':'S')+(B.user?B.user.uid:'-');if(key===subKey)return;subKey=key;
+      subs.forEach(u=>u());subs=[];S.participants={};S.announcements=[];S.loaded=false;
+      let pending=2;const done=()=>{if(--pending<=0)S.loaded=true;refreshView();};
+      ['3','1'].forEach(g=>{let first=true;subs.push(db.collection('participants').doc(g).onSnapshot(d=>{PLOCK[g]=false;if(d.exists)S.participants[g]=d.data();else delete S.participants[g];if(first){first=false;done();}else refreshView();},
+        err=>{if(err&&err.code==='permission-denied')PLOCK[g]=true;if(first){first=false;done();}else refreshView();}));});
+      const parts={},merge=()=>{const m=new Map();Object.values(parts).forEach(l=>l.forEach(a=>m.set(a.id,a)));S.announcements=[...m.values()].sort((a,b)=>b.ts-a.ts);refreshView();};
+      const q=B.teacher?{all:db.collection('announcements').orderBy('ts','desc').limit(60)}
+        :{g3:db.collection('announcements').where('grade','==','3'),g1:db.collection('announcements').where('grade','==','1'),ga:db.collection('announcements').where('grade','==','all')};
+      Object.entries(q).forEach(([k,qq])=>subs.push(qq.onSnapshot(s=>{parts[k]=s.docs.map(d=>({id:d.id,...d.data()}));merge();},()=>{parts[k]=[];merge();})));
+    }
+    let roleUnsub=null,wasTeacher=null;
     const applyRole=(role,name)=>{B.role=role;B.admin=role==='admin';B.teacher=role==='admin'||role==='teacher';B.name=name||'';
+      // material is fetched once at start-up: after staff log out, reload so code-protected material leaves the page;
+      // after staff log in, reload to fetch material that was locked for the visitor
+      if(wasTeacher===true&&!B.teacher){location.reload();return;}
+      if(wasTeacher===false&&B.teacher&&Object.values(window.__DATA__.locked||{}).some(Boolean)){location.reload();return;}
+      wasTeacher=B.teacher;subscribe();
       if(!B.teacher&&inboxUnsub){inboxUnsub();inboxUnsub=null;}
       if(!B.admin&&staffUnsub){staffUnsub();staffUnsub=null;}
       B.authReady=true;msgBoxMode='';refreshView();};
@@ -1591,6 +1652,58 @@ window.CLASS={
     });
   }
 };
+})();
+
+/* ---------- decorative motion: particle background, count-up stats, scroll reveal ---------- */
+(function(){
+const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const {ar,$,$$}=window.APP;
+
+/* particle field behind the page (home only) */
+const cv=document.createElement('canvas');cv.id='bgfx';cv.setAttribute('aria-hidden','true');document.body.prepend(cv);
+const g=cv.getContext('2d');let W=0,Hh=0,P=[],run=false,raf=0,mx=-1e4,my=-1e4,last=0;
+const COLS=['124,156,255','62,224,240','177,140,255','255,107,146'];
+function size(){const d=Math.min(2,devicePixelRatio||1);W=innerWidth;Hh=innerHeight;cv.width=W*d;cv.height=Hh*d;g.setTransform(d,0,0,d,0,0);
+  const n=Math.round(Math.min(90,W*Hh/16000));P=Array.from({length:n},()=>({x:Math.random()*W,y:Math.random()*Hh,vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25,r:Math.random()*1.8+.6,c:COLS[Math.random()*COLS.length|0],p:Math.random()*6.28}));}
+function frame(t){
+  if(!run)return;raf=requestAnimationFrame(frame);
+  if(t-last<33)return;const dt=Math.min(3,(t-last)/16.7||1);last=t;
+  g.clearRect(0,0,W,Hh);
+  for(const a of P){
+    const dx=a.x-mx,dy=a.y-my,d2=dx*dx+dy*dy;
+    if(d2<14000){const f=(14000-d2)/14000*.6;a.vx+=dx/Math.sqrt(d2+1)*f*.08;a.vy+=dy/Math.sqrt(d2+1)*f*.08;}
+    a.vx*=.985;a.vy*=.985;if(Math.abs(a.vx)<.05)a.vx+=(Math.random()-.5)*.02;if(Math.abs(a.vy)<.05)a.vy+=(Math.random()-.5)*.02;
+    a.x+=a.vx*dt;a.y+=a.vy*dt;a.p+=.03*dt;
+    if(a.x<-10)a.x=W+10;if(a.x>W+10)a.x=-10;if(a.y<-10)a.y=Hh+10;if(a.y>Hh+10)a.y=-10;
+  }
+  for(let i=0;i<P.length;i++)for(let j=i+1;j<P.length;j++){const a=P[i],b=P[j],dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy;
+    if(d2<12000){g.strokeStyle=`rgba(124,156,255,${(1-d2/12000)*.16})`;g.lineWidth=1;g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke();}}
+  for(const a of P){const s=.55+.45*Math.sin(a.p);g.fillStyle=`rgba(${a.c},${.35+.45*s})`;g.beginPath();g.arc(a.x,a.y,a.r*(.8+.4*s),0,7);g.fill();}
+}
+function setRun(on){on=on&&!RM&&!document.hidden;if(on===run)return;run=on;if(on){last=0;raf=requestAnimationFrame(frame);}else{cancelAnimationFrame(raf);g.clearRect(0,0,W,Hh);}}
+const onHome=()=>{const h=(location.hash||'#home').slice(1);return h===''||h==='home';};
+size();addEventListener('resize',()=>{size();});
+addEventListener('pointermove',e=>{mx=e.clientX;my=e.clientY;},{passive:true});
+addEventListener('pointerleave',()=>{mx=my=-1e4;});
+document.addEventListener('visibilitychange',()=>setRun(onHome()));
+addEventListener('hashchange',()=>setRun(onHome()));
+setRun(onHome());
+
+/* count-up stats (they keep their Arabic digits and "+" sign) */
+const toNum=s=>+String(s).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[^\d]/g,'');
+function countUp(el){
+  const txt=el.textContent,n=toNum(txt);if(!n||RM)return;const plus=txt.trim().startsWith('+');
+  const t0=performance.now(),dur=1400;
+  (function step(t){const k=Math.min(1,(t-t0)/dur),e=1-Math.pow(1-k,3);el.textContent=(plus?'+':'')+ar(Math.round(n*e));if(k<1)requestAnimationFrame(step);else el.textContent=txt;})(t0);
+}
+const statIO=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){statIO.unobserve(e.target);setTimeout(()=>countUp(e.target),150);}}),{threshold:.6});
+setTimeout(()=>$$('.stat b').forEach(b=>statIO.observe(b)),0);
+
+/* reveal cards on scroll */
+const rev=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');rev.unobserve(e.target);}}),{rootMargin:'0px 0px -40px 0px'});
+function watch(root){if(RM)return;$$('.stat,.gcard,.chcard',root||document).forEach((el,i)=>{if(el.dataset.rv)return;el.dataset.rv=1;el.classList.add('rv');el.style.setProperty('--rv',(i%6)*70+'ms');rev.observe(el);});}
+watch();
+new MutationObserver(ms=>{if(ms.some(m=>m.addedNodes.length))watch();}).observe($('main'),{childList:true,subtree:true});
 })();
 
 LABINIT();CLASS.init();APP.route();

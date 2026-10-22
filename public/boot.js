@@ -8,9 +8,18 @@
   if(S.emulators){db.useEmulator('127.0.0.1',8080);auth.useEmulator('http://127.0.0.1:9099',{disableWarnings:true});}
   else db.enablePersistence({synchronizeTabs:true}).catch(function(){});
   window.FB={db:db,auth:auth};
-  db.collection('chapters').get().then(function(s){
-    var all=s.docs.map(function(d){return d.data();});
-    window.__DATA__={all:all,chapters:all.filter(function(c){return c.grade==='3';}).sort(function(a,b){return a.i-b.i;})};
-  }).catch(function(e){window.__DATA__={all:[],chapters:[]};console.error(e);})
-  .then(function(){if(boot)boot.remove();window.RUNAPP();});
+  // ننتظر معرفة المستخدم أولًا، ثم نجلب مادة كل صف على حدة (الصف المقفل برمز يُرفض من قاعدة البيانات)
+  var D={all:[],chapters:[],locked:{}},started=false;
+  function load(g){
+    return db.collection('chapters').where('grade','==',g).get()
+      .then(function(s){return s.docs.map(function(d){return d.data();});})
+      .catch(function(e){if(e&&e.code==='permission-denied')D.locked[g]=true;else console.error(e);return [];});
+  }
+  var stop=auth.onAuthStateChanged(function(){
+    if(started)return;started=true;stop();
+    Promise.all([load('3'),load('1')]).then(function(r){
+      D.all=r[0].concat(r[1]);D.chapters=r[0].sort(function(a,b){return a.i-b.i;});
+      window.__DATA__=D;if(boot)boot.remove();window.RUNAPP();
+    });
+  });
 })();

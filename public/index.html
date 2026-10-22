@@ -189,9 +189,11 @@
 <!-- ================= HOME ================= -->
 <section class="view" id="v-home">
   <div class="hero">
+    <div class="formulas" aria-hidden="true"><span style="--x:6%;--d:0s;--t:16s">V = IR</span><span style="--x:22%;--d:-5s;--t:19s">F = ma</span><span style="--x:40%;--d:-9s;--t:17s">E = mc²</span><span style="--x:58%;--d:-2s;--t:21s">P = IV</span><span style="--x:72%;--d:-12s;--t:18s">λ = v/f</span><span style="--x:86%;--d:-7s;--t:20s">ρ = m/V</span><span style="--x:32%;--d:-14s;--t:22s">F = kq₁q₂/r²</span><span style="--x:64%;--d:-17s;--t:23s">Vp/Vs = Np/Ns</span></div>
     <div>
       <span class="kick">سلسلة التفوّق العلمي</span>
       <div class="t3dw">الفيزياء</div>
+      <svg class="wave" viewBox="0 0 400 24" preserveAspectRatio="none" aria-hidden="true"><path d="M0 12 Q25 0 50 12 T100 12 T150 12 T200 12 T250 12 T300 12 T350 12 T400 12 T450 12 T500 12"/></svg>
       <p class="sub">شرح الفصول، والأسئلة الوزارية وحلولها، ومختبر محاكاة تجرّب فيه بنفسك. اختر صفّك وابدأ.</p>
       <div class="who"><span class="mono" style="width:50px;height:50px">M.R</span><div><b>الأستاذة روان محمد</b><small>مدرّسة مادة الفيزياء</small></div></div>
       <div class="ctas">
@@ -212,11 +214,15 @@
       <circle cx="150" cy="125" r="120" fill="url(#hglow)"/>
       <g transform="translate(150 125)">
         <g fill="none" stroke="url(#hr)" stroke-width="3" opacity=".4"><path d="M-95 0A95 31 0 0 1 95 0"/><path d="M-95 0A95 31 0 0 1 95 0" transform="rotate(60)"/><path d="M-95 0A95 31 0 0 1 95 0" transform="rotate(-60)"/></g>
-        <circle r="30" fill="url(#hs1)"/><ellipse cx="-10" cy="-12" rx="10" ry="6" fill="#fff" opacity=".8"/>
+        <g class="nucleus"><circle r="30" fill="url(#hs1)"/><ellipse cx="-10" cy="-12" rx="10" ry="6" fill="#fff" opacity=".8"/></g>
         <g fill="none" stroke="url(#hr)" stroke-width="4"><path d="M95 0A95 31 0 0 1 -95 0"/><path d="M95 0A95 31 0 0 1 -95 0" transform="rotate(60)"/><path d="M95 0A95 31 0 0 1 -95 0" transform="rotate(-60)"/></g>
-        <circle cx="78" cy="18" r="9" fill="url(#hs2)"/><circle cx="-54" cy="55" r="9" fill="url(#hs3)"/><circle cx="-24" cy="-75" r="9" fill="url(#hs4)"/>
+        <g class="electrons">
+          <circle r="9" fill="url(#hs2)"><animateMotion dur="3.6s" repeatCount="indefinite" path="M95 0A95 31 0 1 1 -95 0A95 31 0 1 1 95 0"/></circle>
+          <g transform="rotate(60)"><circle r="9" fill="url(#hs3)"><animateMotion dur="4.4s" begin="-1.2s" repeatCount="indefinite" path="M-95 0A95 31 0 1 1 95 0A95 31 0 1 1 -95 0"/></circle></g>
+          <g transform="rotate(-60)"><circle r="9" fill="url(#hs4)"><animateMotion dur="5.2s" begin="-2.6s" repeatCount="indefinite" path="M95 0A95 31 0 1 0 -95 0A95 31 0 1 0 95 0"/></circle></g>
+        </g>
       </g>
-      <circle cx="40" cy="40" r="14" fill="url(#hs4)"/><circle cx="268" cy="70" r="9" fill="url(#hs2)"/><circle cx="262" cy="210" r="7" fill="url(#hs3)"/>
+      <circle class="fl f1" cx="40" cy="40" r="14" fill="url(#hs4)"/><circle class="fl f2" cx="268" cy="70" r="9" fill="url(#hs2)"/><circle class="fl f3" cx="262" cy="210" r="7" fill="url(#hs3)"/>
     </svg>
   </div>
 
